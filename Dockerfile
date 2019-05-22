@@ -13,7 +13,6 @@ WORKDIR /app
 COPY requirements.txt /app
 # Prefetch: install packages to previous layers
 RUN python -m pip install -r /app/requirements.txt
+RUN python -c "import torch.utils.model_zoo as model_zoo; from torchvision.models.resnet import model_urls; model_zoo.load_url(model_urls['resnet50'])"
 
 COPY . /app
-
-RUN python -c 'from agent.resnet import resnet50; resnet50(pretrained=True)'
