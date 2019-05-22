@@ -23,7 +23,7 @@ TASK_LIST = {
 class TrainingSaver:
     def __init__(self, shared_network, scene_networks, optimizer, config):
         self.checkpoint_path = config.get('checkpoint_path', 'model/checkpoint-{checkpoint}.pth')
-        self.saving_period = config.get('saving_period', 10 ** 6 // 5)
+        self.saving_period = config.get('saving_period', 10 ** 6 // 50)
         self.shared_network = shared_network
         self.scene_networks = scene_networks
         self.optimizer = optimizer
@@ -32,6 +32,7 @@ class TrainingSaver:
     def after_optimization(self):
         iteration = self.optimizer.get_global_step()
         if iteration % self.saving_period == 0:
+            print('Saving training session')
             self.save()
 
     def save(self):

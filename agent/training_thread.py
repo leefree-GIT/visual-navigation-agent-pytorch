@@ -63,7 +63,7 @@ class TrainingThread(mp.Process):
         self.gamma : float = self.init_args.get('gamma', 0.99)
         self.grad_norm: float = self.init_args.get('grad_norm', 40.0)
         entropy_beta : float = self.init_args.get('entropy_beta', 0.01)
-        self.max_t : int = self.init_args.get('max_t', 1)# TODO: 5)
+        self.max_t : int = self.init_args.get('max_t', 5)# TODO: 5)
         self.local_t = 0
         self.action_space_size = self.get_action_space_size()
 
@@ -151,6 +151,8 @@ class TrainingThread(mp.Process):
                 terminal_end = True
                 self._reset_episode()
                 break
+            if (self.local_t % 100) == 0:
+                print("Local timestep %d\n" % self.local_t)
 
         if terminal_end:
             return 0.0, results, rollout_path
