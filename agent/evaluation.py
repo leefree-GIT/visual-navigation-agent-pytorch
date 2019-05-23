@@ -12,16 +12,12 @@ import numpy as np
 import re
 from itertools import groupby
 
-TASK_LIST = {
-  'bathroom_02': ['26', '37', '43', '53', '69'],
-  'bedroom_04': ['134', '264', '320', '384', '387'],
-  'kitchen_02': ['90', '136', '157', '207', '329'],
-  'living_room_08': ['92', '135', '193', '228', '254']
-}
+from agent.constants import TASK_LIST
+from agent.constants import ACTION_SPACE_SIZE
+from agent.constants import NUM_EVAL_EPISODES
+from agent.constants import VERBOSE
 
-ACTION_SPACE_SIZE = 4
-NUM_EVAL_EPISODES = 100
-VERBOSE = False
+
 
 def export_to_csv(data, file):
     import csv
@@ -73,6 +69,7 @@ class Evaluation:
                 ep_rewards = []
                 ep_lengths = []
                 ep_collisions = []
+                print('evaluation: %s %s' % (scene_scope, task_scope))
                 for i_episode in range(NUM_EVAL_EPISODES):
                     env.reset()
                     terminal = False
@@ -99,7 +96,7 @@ class Evaluation:
                     ep_collisions.append(ep_collision)
                     if VERBOSE: print("episode #{} ends after {} steps".format(i_episode, ep_t))
 
-                print('evaluation: %s %s' % (scene_scope, task_scope))
+                
                 print('mean episode reward: %.2f' % np.mean(ep_rewards))
                 print('mean episode length: %.2f' % np.mean(ep_lengths))
                 print('mean episode collision: %.2f' % np.mean(ep_collisions))

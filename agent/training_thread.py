@@ -1,5 +1,6 @@
 from agent.network import SceneSpecificNetwork, SharedNetwork, ActorCriticLoss
 from agent.environment import Environment, THORDiscreteEnvironment
+
 import torch.nn as nn
 from typing import Dict, Collection
 import signal
@@ -12,12 +13,30 @@ import torch.multiprocessing as mp
 import torch.nn.functional as F
 import numpy as np
 import logging
-from multiprocessing import Condition
+
+import sys
+import pdb
+import os
+
+class ForkablePdb(pdb.Pdb):
+
+    _original_stdin_fd = sys.stdin.fileno()
+    _original_stdin = None
+
+    def __init__(self):
+        pdb.Pdb.__init__(self, nosigint=True)
+
+    def _cmdloop(self):
+        current_stdin = sys.stdin
+        try:
+            if not self._original_stdin:
+                self._original_stdin = os.fdopen(self._original_stdin_fd)
+            sys.stdin = self._original_stdin
+            self.cmdloop()
+        finally:
+            sys.stdin = current_stdin
 
 TrainingSample = namedtuple('TrainingSample', ('state', 'policy', 'value', 'action_taken', 'goal', 'R', 'temporary_difference'))
-
-
-
 
 
 class TrainingThread(mp.Process):
@@ -27,6 +46,7 @@ class TrainingThread(mp.Process):
             saver,
             optimizer,
             scene : str,
+            max_step: int,
             **kwargs):
 
         super(TrainingThread, self).__init__()
@@ -42,8 +62,13 @@ class TrainingThread(mp.Process):
         self.master_network = network
         self.optimizer = optimizer
 
+        self.exit = mp.Event()
+        self.max_step = max_step
+        self.local_t = 0
+
     def _sync_network(self):
-        self.policy_network.load_state_dict(self.master_network.state_dict())
+        state_dict = self.master_network.state_dict()
+        self.policy_network.load_state_dict(state_dict)
 
     def _ensure_shared_grads(self):
         for param, shared_param in zip(self.policy_network.parameters(), self.master_network.parameters()):
@@ -69,8 +94,8 @@ class TrainingThread(mp.Process):
 
         self.criterion = ActorCriticLoss(entropy_beta)
         self.policy_network = nn.Sequential(SharedNetwork(), SceneSpecificNetwork(self.get_action_space_size()))
-
         # Initialize the episode
+        # import pdb; pdb.set_trace()
         self._reset_episode()
         self._sync_network()
 
@@ -88,6 +113,11 @@ class TrainingThread(mp.Process):
 
         results = { "policy":[], "value": []}
         rollout_path = {"state": [], "action": [], "rewards": [], "done": []}
+
+
+
+        if (self.id == 0) and (self.local_t % 100) == 0:
+            print(f'Local Step {self.local_t}')
 
         # Plays out one game to end or max_t
         for t in range(self.max_t):
@@ -150,9 +180,7 @@ class TrainingThread(mp.Process):
 
                 terminal_end = True
                 self._reset_episode()
-                break
-            if (self.local_t % 100) == 0:
-                print("Local timestep %d\n" % self.local_t)
+                break      
 
         if terminal_end:
             return 0.0, results, rollout_path
@@ -215,20 +243,24 @@ class TrainingThread(mp.Process):
 
         try:
             self.env.reset()
-            while True:
+            while True and not self.exit.is_set() and self.optimizer.get_global_step() < self.max_step:
                 self._sync_network()
                 # Plays some samples
                 playout_reward, results, rollout_path = self._forward_explore()
                 # Train on collected samples
                 self._optimize_path(playout_reward, results, rollout_path)
-                
-                print(f'Step finished {self.optimizer.get_global_step()}')
+                if (self.id == 0) and (self.optimizer.get_global_step() % 100) == 0:
+                    print(f'Global Step {self.optimizer.get_global_step()}')
 
                 # Trigger save or other
                 self.saver.after_optimization()                
-                pass
+                # pass
         except Exception as e:
             print(e)
             # TODO: add logging
             #self.logger.error(e.msg)
             raise e
+
+    def stop(self):
+        print("Stop initiated")
+        self.exit.set()
