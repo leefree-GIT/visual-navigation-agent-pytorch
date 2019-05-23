@@ -21,6 +21,30 @@ class DQN(nn.Module):
         x = F.relu(self.bn3(self.conv3(x)))
         return self.head(x.view(x.size(0), -1))
 
+class SharedResnet(nn.Module):
+    def __init__(self):
+        super(SharedResnet, self).__init__()
+
+        self.resnet = resnet50()
+
+    def forward(self, inp):
+        new_inp = ()
+        for net_inp in inp:
+            net_inp = net_inp.unsqueeze(0)
+            net_inp = net_inp.permute(0,3,1,2)
+            new_inp = new_inp + (net_inp,)
+
+        # (obs_past_3, obs_past_2, obs_past_1, obs_now, target,) = new_inp
+        (obs,) = new_inp
+
+        x = self.resnet(obs)
+
+        return x
+
+    def load_resnet_pretrained(self, state_dict_trained):
+        self.resnet.load_state_dict(state_dict_trained)
+        for p in self.resnet.parameters():
+            p.requires_grad = False
 
 class SharedNetwork(nn.Module):
     def __init__(self):

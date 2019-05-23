@@ -8,10 +8,12 @@ import skimage.io
 from skimage.transform import resize
 from agent.environment.environment import Environment
 from torchvision import transforms
+import torch
 
 class THORDiscreteEnvironment(Environment):
     def __init__(self, 
             scene_name = 'bedroom_04',
+            resnet_trained = None,
             random_start = True,
             n_feat_per_location = 1,
             history_length : int = 4,
@@ -29,7 +31,11 @@ class THORDiscreteEnvironment(Environment):
         elif callable(h5_file_path):
             h5_file_path = h5_file_path(scene_name)
                 
-
+        if resnet_trained is not None:
+            self.resnet_trained = resnet_trained
+            self.use_resnet = True
+        else:
+            self.use_resnet = False
         self.terminal_state_id = terminal_state_id
         self.h5_file = h5py.File(h5_file_path, 'r')
         self.n_feat_per_location = n_feat_per_location
@@ -64,6 +70,7 @@ class THORDiscreteEnvironment(Environment):
         
         # reset parameters
         self.current_state_id = k # TODO: k
+        self.start_state_id = k
         self.s_t = self._tiled_state(self.current_state_id)
 
         self.collided = False
@@ -91,7 +98,13 @@ class THORDiscreteEnvironment(Environment):
     def _get_state(self, state_id):
         # read from hdf5 cache
         k = random.randrange(self.n_feat_per_location)
-        return self.h5_file['resnet_feature'][state_id][k][:,np.newaxis]
+        if not self.use_resnet:
+            return self.h5_file['resnet_feature'][state_id][k][:,np.newaxis]
+        else:
+            obs_resnet = resize(self.h5_file['observation'][state_id], (224,224)).astype(dtype=np.float32)
+            tens_obs_resnet = torch.from_numpy(obs_resnet)
+            res = self.resnet_trained((tens_obs_resnet,))
+            return res.permute(1,0)
 
     def _tiled_state(self, state_id):
         f = self._get_state(state_id)
@@ -111,14 +124,28 @@ class THORDiscreteEnvironment(Environment):
     def is_terminal(self):
         return self.terminal or self.time >= 5e3
 
+    @property
+    def observation(self):
+        return self.h5_file['observation'][self.current_state_id]
+
     def render(self, mode):
         assert mode == 'resnet_features'
-        return self.s_t
+        if mode == 'resnet_features':
+            return self.s_t
+        else:
+            return resize(self.observation, (224,224)).astype(dtype=np.float32)
 
     def render_target(self, mode):
         assert mode == 'resnet_features'
-        return self.s_target
+        if mode == 'resnet_features':
+            return self.s_target
+        else:
+            return resize(self.h5_file['observation'][self.terminal_state_id], (224,224)).astype(dtype=np.float32)
 
     @property
     def actions(self):
         return ["MoveForward", "RotateRight", "RotateLeft", "MoveBackward"]
+
+    @property
+    def shortest_path_distance_start(self):
+        return self.shortest_path_distances[self.start_state_id][self.terminal_state_id]

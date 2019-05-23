@@ -1,5 +1,6 @@
-from agent.network import SceneSpecificNetwork, SharedNetwork, ActorCriticLoss
+from agent.network import SceneSpecificNetwork, SharedNetwork, ActorCriticLoss, SharedResnet
 from agent.environment import Environment, THORDiscreteEnvironment
+from agent.resnet import resnet50
 
 import torch.nn as nn
 from typing import Dict, Collection
@@ -47,6 +48,7 @@ class TrainingThread(mp.Process):
             optimizer,
             scene : str,
             max_step: int,
+            resnet_trained: torch.nn.Module,
             **kwargs):
 
         super(TrainingThread, self).__init__()
@@ -60,6 +62,7 @@ class TrainingThread(mp.Process):
         self.id = id
 
         self.master_network = network
+        self.resnet_network = resnet_trained
         self.optimizer = optimizer
 
         self.exit = mp.Event()
@@ -84,7 +87,11 @@ class TrainingThread(mp.Process):
         # self.logger = logging.getLogger('agent')
         # self.logger.setLevel(logging.INFO)
         self.init_args['h5_file_path'] = lambda scene: h5_file_path.replace('{scene}', scene)
-        self.env = THORDiscreteEnvironment(self.scene, **self.init_args)
+
+        resnet_model = SharedResnet()
+        resnet_model.load_resnet_pretrained(self.resnet_network.state_dict())
+        self.env = THORDiscreteEnvironment(self.scene, resnet_model, **self.init_args)
+
         self.gamma : float = self.init_args.get('gamma', 0.99)
         self.grad_norm: float = self.init_args.get('grad_norm', 40.0)
         entropy_beta : float = self.init_args.get('entropy_beta', 0.01)
@@ -95,7 +102,6 @@ class TrainingThread(mp.Process):
         self.criterion = ActorCriticLoss(entropy_beta)
         self.policy_network = nn.Sequential(SharedNetwork(), SceneSpecificNetwork(self.get_action_space_size()))
         # Initialize the episode
-        # import pdb; pdb.set_trace()
         self._reset_episode()
         self._sync_network()
 
@@ -115,10 +121,6 @@ class TrainingThread(mp.Process):
         rollout_path = {"state": [], "action": [], "rewards": [], "done": []}
 
 
-
-        if (self.id == 0) and (self.local_t % 100) == 0:
-            print(f'Local Step {self.local_t}')
-
         # Plays out one game to end or max_t
         for t in range(self.max_t):
             state = { 
@@ -130,6 +132,9 @@ class TrainingThread(mp.Process):
             goal_processed = torch.from_numpy(state["goal"])
 
             (policy, value) = self.policy_network((x_processed, goal_processed,))
+
+            if (self.id == 0) and (self.local_t % 100) == 0:
+                print(f'Local Step {self.local_t}')
 
             # Store raw network output to use in backprop
             results["policy"].append(policy)
@@ -175,6 +180,7 @@ class TrainingThread(mp.Process):
                 # TODO: add logging
                 print('playout finished')
                 print(f'episode length: {self.episode_length}')
+                print(f'episode shortest length: {self.env.shortest_path_distance_start}')
                 print(f'episode reward: {self.episode_reward}')
                 print(f'episode max_q: {self.episode_max_q}')
 

@@ -14,6 +14,8 @@ import re
 from agent.constants import TOTAL_PROCESSED_FRAMES
 from agent.constants import TASK_LIST
 
+from agent.resnet import resnet50
+
 class TrainingSaver:
     def __init__(self, shared_network, scene_networks, optimizer, config):
         self.checkpoint_path = config.get('checkpoint_path', 'model/checkpoint-{checkpoint}.pth')
@@ -203,6 +205,9 @@ class Training:
         self.logger.info("Training started")
         self.print_parameters()
 
+        # Download pretrained resnet
+        resnet_trained = resnet50(pretrained=True)
+
         # Prepare threads
         branches = [(scene, int(target)) for scene in TASK_LIST.keys() for target in TASK_LIST.get(scene)]
         def _createThread(id, task):
@@ -218,6 +223,7 @@ class Training:
                 max_t = self.max_t,
                 terminal_state_id = target,
                 max_step = TOTAL_PROCESSED_FRAMES,
+                resnet_trained = resnet_trained,
                 **self.config)
 
         num_scene_task =  len(branches)
