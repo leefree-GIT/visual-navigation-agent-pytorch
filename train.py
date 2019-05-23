@@ -6,7 +6,7 @@ import multiprocessing as mp
 from agent.training import Training
 
 if __name__ == '__main__':
-    # mp.set_start_method('spawn')
+    mp.set_start_method('spawn')
     argparse.ArgumentParser(description="")
     parser = argparse.ArgumentParser(description='Deep reactive agent.')
     parser.add_argument('--entropy_beta', type=float, default=0.01,
@@ -31,6 +31,7 @@ if __name__ == '__main__':
     #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     device = torch.device('cpu')
 
+    print(torch.get_num_threads())
     if args['restore']:
         t = Training.load_checkpoint(args)
     else:
