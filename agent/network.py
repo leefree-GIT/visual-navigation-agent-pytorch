@@ -4,6 +4,20 @@ import torch
 from agent.resnet import resnet50
 import numpy as np
 
+def compare_models(model_1, model_2):
+    models_differ = 0
+    for key_item_1, key_item_2 in zip(model_1.state_dict().items(), model_2.state_dict().items()):
+        if torch.equal(key_item_1[1], key_item_2[1]):
+            pass
+        else:
+            models_differ += 1
+            if (key_item_1[0] == key_item_2[0]):
+                print('Mismtach found at', key_item_1[0])
+            else:
+                raise Exception
+    if models_differ == 0:
+        print('Models match perfectly! :)')
+
 class DQN(nn.Module):
     def __init__(self):
         super(DQN, self).__init__()
@@ -28,23 +42,23 @@ class SharedResnet(nn.Module):
         self.resnet = resnet50()
 
     def forward(self, inp):
-        new_inp = ()
-        for net_inp in inp:
-            net_inp = net_inp.unsqueeze(0)
-            net_inp = net_inp.permute(0,3,1,2)
-            new_inp = new_inp + (net_inp,)
+        with torch.no_grad():
+            new_inp = ()
+            for net_inp in inp:
+                new_inp = new_inp + (net_inp,)
 
-        # (obs_past_3, obs_past_2, obs_past_1, obs_now, target,) = new_inp
-        (obs,) = new_inp
+            # (obs_past_3, obs_past_2, obs_past_1, obs_now, target,) = new_inp
+            (obs,) = new_inp
 
-        x = self.resnet(obs)
+            x = self.resnet(obs)
 
-        return x
+            return x
 
     def load_resnet_pretrained(self, state_dict_trained):
         self.resnet.load_state_dict(state_dict_trained)
         for p in self.resnet.parameters():
             p.requires_grad = False
+        self.resnet.eval()
 
 class SharedNetwork(nn.Module):
     def __init__(self):
