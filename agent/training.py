@@ -1,4 +1,4 @@
-from agent.network import SharedNetwork, SceneSpecificNetwork
+from agent.network import SharedNetwork, SceneSpecificNetwork, SharedResnet, compare_models
 from agent.training_thread import TrainingThread
 from agent.optim import SharedRMSprop
 from typing import Collection, List
@@ -9,6 +9,9 @@ import sys
 import torch
 import os
 import threading
+import h5py
+from skimage.transform import resize
+import numpy as np
 from contextlib import suppress
 import re
 from agent.constants import TOTAL_PROCESSED_FRAMES
@@ -16,10 +19,44 @@ from agent.constants import TASK_LIST
 
 from agent.resnet import resnet50
 
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
+# Preprocess obs to match resnet input 
+def preprocess_obs(scenes, h5_file_path):
+    device = torch.device("cpu")
+    h5_path = lambda scene: h5_file_path.replace('{scene}', scene)
+    d = dict()
+    for scene in scenes:
+        h5_file = h5py.File(h5_path(scene), 'r')
+        if not scene in d:
+            obs = h5_file['observation'][0]
+            resized = resize(obs, (224,224)).astype(dtype=np.float32)
+            resized_tens_cat = torch.from_numpy(resized).to(device)
+            resized_tens_cat = resized_tens_cat.unsqueeze(0)
+            resized_tens_cat = resized_tens_cat.permute(0,3,1,2)
+            resized_tens_cat.share_memory_()
+
+            for i in range(1,len(h5_file['observation'])):
+                obs = h5_file['observation'][i]
+                resized = resize(obs, (224,224)).astype(dtype=np.float32)
+                resized_tens = torch.from_numpy(resized).to(device)
+                resized_tens = resized_tens.unsqueeze(0)
+                resized_tens = resized_tens.permute(0,3,1,2)
+                resized_tens = resized_tens.share_memory_()
+                resized_tens_cat = torch.cat((resized_tens_cat, resized_tens), 0)
+        resized_tens_cat = resized_tens_cat.share_memory_()
+
+        logging.info(f"Tensor for scene {scene} created")
+        size_v = resized_tens_cat.element_size() * resized_tens_cat.nelement()
+        logging.info(f"{scene} size = {size_v}.")
+        d[scene] = resized_tens_cat
+    return d
+
 class TrainingSaver:
     def __init__(self, shared_network, scene_networks, optimizer, config):
         self.checkpoint_path = config.get('checkpoint_path', 'model/checkpoint-{checkpoint}.pth')
-        self.saving_period = config.get('saving_period', 10 ** 6 // 50)
+        self.saving_period = config.get('saving_period', 10 ** 6 // 500)
         self.shared_network = shared_network
         self.scene_networks = scene_networks
         self.optimizer = optimizer
@@ -144,7 +181,7 @@ class Training:
 
     @staticmethod
     def load_checkpoint(config, fail = True):
-        device = torch.device('cpu')
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         checkpoint_path = config.get('checkpoint_path', 'model/checkpoint-{checkpoint}.pth')
         max_t = config.get('max_t', 5)
         total_epochs = TOTAL_PROCESSED_FRAMES // max_t
@@ -207,13 +244,29 @@ class Training:
 
         # Download pretrained resnet
         resnet_trained = resnet50(pretrained=True)
+        resnet_trained.to(self.device)
+        resnet_custom = SharedResnet()
+        resnet_custom.load_resnet_pretrained(resnet_trained.state_dict())
+        resnet_custom.to(self.device)
+        resnet_custom.share_memory()
+        resnet_custom.resnet.share_memory()
+        compare_models(resnet_custom.resnet, resnet_trained)
 
         # Prepare threads
         branches = [(scene, int(target)) for scene in TASK_LIST.keys() for target in TASK_LIST.get(scene)]
+
+
+        # Preprocess obs
+        h5_file_path = self.config.get('h5_file_path')
+        d_obs = preprocess_obs(TASK_LIST.keys(), h5_file_path)
+
+
         def _createThread(id, task):
             (scene, target) = task
             net = nn.Sequential(self.shared_network, self.scene_networks[scene])
             net.share_memory()
+
+
             return TrainingThread(
                 id = id,
                 optimizer = self.optimizer,
@@ -223,7 +276,9 @@ class Training:
                 max_t = self.max_t,
                 terminal_state_id = target,
                 max_step = TOTAL_PROCESSED_FRAMES,
-                resnet_trained = resnet_trained,
+                resnet_trained = resnet_custom,
+                device = self.device,
+                obs_preloaded = d_obs[scene],
                 **self.config)
 
         num_scene_task =  len(branches)
@@ -251,6 +306,7 @@ class Training:
             self.saver.save()
             for thread in self.threads:
                 thread.stop()
+            compare_models(resnet_trained, resnet_custom.resnet)
         
 
     def _init_logger(self):

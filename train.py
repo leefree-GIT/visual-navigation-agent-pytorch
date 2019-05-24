@@ -24,12 +24,13 @@ if __name__ == '__main__':
         help='decay parameter for RMSProp optimizer (default: 0.99)')
     parser.add_argument('--rmsp_epsilon', type = float, default = 0.1,
         help='epsilon parameter for RMSProp optimizer (default: 0.1)')
+    parser.add_argument('--num_thread', type = int, default=20, help='number of total threads')
 
 
     args = vars(parser.parse_args())
 
-    #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    device = torch.device('cpu')
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # device = torch.device('cpu')
 
     print(torch.get_num_threads())
     if args['restore']:

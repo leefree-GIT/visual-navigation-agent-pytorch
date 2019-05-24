@@ -1,4 +1,4 @@
-from agent.network import SceneSpecificNetwork, SharedNetwork, ActorCriticLoss, SharedResnet
+from agent.network import SceneSpecificNetwork, SharedNetwork, ActorCriticLoss, SharedResnet, compare_models
 from agent.environment import Environment, THORDiscreteEnvironment
 from agent.resnet import resnet50
 
@@ -49,6 +49,7 @@ class TrainingThread(mp.Process):
             scene : str,
             max_step: int,
             resnet_trained: torch.nn.Module,
+            obs_preloaded: torch.tensor,
             **kwargs):
 
         super(TrainingThread, self).__init__()
@@ -68,6 +69,7 @@ class TrainingThread(mp.Process):
         self.exit = mp.Event()
         self.max_step = max_step
         self.local_t = 0
+        self.obs_preloaded = obs_preloaded
 
     def _sync_network(self):
         state_dict = self.master_network.state_dict()
@@ -87,10 +89,7 @@ class TrainingThread(mp.Process):
         # self.logger = logging.getLogger('agent')
         # self.logger.setLevel(logging.INFO)
         self.init_args['h5_file_path'] = lambda scene: h5_file_path.replace('{scene}', scene)
-
-        resnet_model = SharedResnet()
-        resnet_model.load_resnet_pretrained(self.resnet_network.state_dict())
-        self.env = THORDiscreteEnvironment(self.scene, resnet_model, **self.init_args)
+        self.env = THORDiscreteEnvironment(self.scene, self.resnet_network, obs_preloaded = self.obs_preloaded, **self.init_args)
 
         self.gamma : float = self.init_args.get('gamma', 0.99)
         self.grad_norm: float = self.init_args.get('grad_norm', 40.0)
@@ -261,6 +260,7 @@ class TrainingThread(mp.Process):
                 # Trigger save or other
                 self.saver.after_optimization()                
                 # pass
+            # compare_models(self.resnet_model.resnet, self.resnet_network)
         except Exception as e:
             print(e)
             # TODO: add logging

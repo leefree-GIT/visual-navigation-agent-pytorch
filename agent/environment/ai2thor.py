@@ -21,6 +21,7 @@ class THORDiscreteEnvironment(Environment):
             screen_height = 224,
             terminal_state_id = 0,
             h5_file_path = None,
+            obs_preloaded = None,
             **kwargs):
         super(THORDiscreteEnvironment, self).__init__()
 
@@ -30,26 +31,38 @@ class THORDiscreteEnvironment(Environment):
             h5_file_path = f"/app/data/{scene_name}.h5"
         elif callable(h5_file_path):
             h5_file_path = h5_file_path(scene_name)
-                
+            
         if resnet_trained is not None:
             self.resnet_trained = resnet_trained
             self.use_resnet = True
         else:
             self.use_resnet = False
+
         self.terminal_state_id = terminal_state_id
+
         self.h5_file = h5py.File(h5_file_path, 'r')
+
         self.n_feat_per_location = n_feat_per_location
+
         self.locations = self.h5_file['location'][()]
         self.rotations = self.h5_file['rotation'][()]
+        self.resized_obs_tens = obs_preloaded
+
         self.history_length = history_length
+
         self.n_locations = self.locations.shape[0]
+
         self.terminals = np.zeros(self.n_locations)
         self.terminals[terminal_state_id] = 1
         self.terminal_states, = np.where(self.terminals)
+
         self.transition_graph = self.h5_file['graph'][()]
+
         self.shortest_path_distances = self.h5_file['shortest_path_distance'][()]
+
         self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
+
         self.s_target = self._tiled_state(self.terminal_state_id)
         self.time = 0
 
@@ -101,10 +114,9 @@ class THORDiscreteEnvironment(Environment):
         if not self.use_resnet:
             return self.h5_file['resnet_feature'][state_id][k][:,np.newaxis]
         else:
-            obs_resnet = resize(self.h5_file['observation'][state_id], (224,224)).astype(dtype=np.float32)
-            tens_obs_resnet = torch.from_numpy(obs_resnet)
-            res = self.resnet_trained((tens_obs_resnet,))
-            return res.permute(1,0)
+            input_tens = self.resized_obs_tens[state_id]
+            res = self.resnet_trained((input_tens,)).unsqueeze(0)
+            return res.permute(1,0).cuda()
 
     def _tiled_state(self, state_id):
         f = self._get_state(state_id)
@@ -130,17 +142,11 @@ class THORDiscreteEnvironment(Environment):
 
     def render(self, mode):
         assert mode == 'resnet_features'
-        if mode == 'resnet_features':
-            return self.s_t
-        else:
-            return resize(self.observation, (224,224)).astype(dtype=np.float32)
+        return self.s_t
 
     def render_target(self, mode):
         assert mode == 'resnet_features'
-        if mode == 'resnet_features':
-            return self.s_target
-        else:
-            return resize(self.h5_file['observation'][self.terminal_state_id], (224,224)).astype(dtype=np.float32)
+        return self.s_target
 
     @property
     def actions(self):
