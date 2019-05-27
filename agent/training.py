@@ -11,11 +11,14 @@ import os
 import threading
 import h5py
 from skimage.transform import resize
+from torchvision import transforms
+import torchvision.transforms.functional as F
 import numpy as np
 from contextlib import suppress
 import re
 from agent.constants import TOTAL_PROCESSED_FRAMES
 from agent.constants import TASK_LIST
+from agent.constants import SAVING_PERIOD
 
 from agent.resnet import resnet50
 
@@ -27,23 +30,29 @@ def preprocess_obs(scenes, h5_file_path):
     device = torch.device("cpu")
     h5_path = lambda scene: h5_file_path.replace('{scene}', scene)
     d = dict()
+    transform = transforms.Compose([
+    transforms.Resize((224,224)), 
+    transforms.ToTensor(), 
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
+
+
+
     for scene in scenes:
         h5_file = h5py.File(h5_path(scene), 'r')
         if not scene in d:
             obs = h5_file['observation'][0]
-            resized = resize(obs, (224,224)).astype(dtype=np.float32)
-            resized_tens_cat = torch.from_numpy(resized).to(device)
+            # resized = resize(obs, (224,224)).astype(dtype=np.float32)
+            resized_tens_cat = torch.from_numpy(obs).to(device)
+            resized_tens_cat = transform(F.to_pil_image(resized_tens_cat))
             resized_tens_cat = resized_tens_cat.unsqueeze(0)
-            resized_tens_cat = resized_tens_cat.permute(0,3,1,2)
-            resized_tens_cat.share_memory_()
+            resized_tens_cat = resized_tens_cat.share_memory_()
 
             for i in range(1,len(h5_file['observation'])):
                 obs = h5_file['observation'][i]
-                resized = resize(obs, (224,224)).astype(dtype=np.float32)
-                resized_tens = torch.from_numpy(resized).to(device)
-                resized_tens = resized_tens.unsqueeze(0)
-                resized_tens = resized_tens.permute(0,3,1,2)
-                resized_tens = resized_tens.share_memory_()
+                resized_tens_cat = torch.from_numpy(obs).to(device)
+                resized_tens_cat = transform(F.to_pil_image(resized_tens_cat))
+                resized_tens_cat = resized_tens_cat.unsqueeze(0)
+                resized_tens_cat = resized_tens_cat.share_memory_()
                 resized_tens_cat = torch.cat((resized_tens_cat, resized_tens), 0)
         resized_tens_cat = resized_tens_cat.share_memory_()
 
@@ -56,7 +65,7 @@ def preprocess_obs(scenes, h5_file_path):
 class TrainingSaver:
     def __init__(self, shared_network, scene_networks, optimizer, config):
         self.checkpoint_path = config.get('checkpoint_path', 'model/checkpoint-{checkpoint}.pth')
-        self.saving_period = config.get('saving_period', 10 ** 6 // 500)
+        self.saving_period = config.get('saving_period', SAVING_PERIOD)
         self.shared_network = shared_network
         self.scene_networks = scene_networks
         self.optimizer = optimizer
