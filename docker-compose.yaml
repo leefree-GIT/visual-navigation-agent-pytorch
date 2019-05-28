@@ -1,15 +1,51 @@
-version: '3'
+version: '2.4'
 services:
   agent:
     build:
       context: .
     volumes:
-      - agentmodel:/model
+      - ./agentmodel:/model
     image: kulhanek/visual-navigation-agent-pytorch
 
   train:
-    command: "python -u /app/train.py"
+    ipc: host
+    runtime: nvidia
+    command: "python -u /app/train.py --num_thread 5"
     image: kulhanek/visual-navigation-agent-pytorch
+    volumes:
+      - ./agentmodel:/model
+      - ./runs:/app/runs
+    environment:
+      - PYTHONUNBUFFERED=1 
+    depends_on:
+      - agent
+  eval:
+    ipc: host
+    runtime: nvidia
+    command: "python -u /app/eval.py"
+    image: kulhanek/visual-navigation-agent-pytorch
+    volumes:
+      - ./agentmodel:/model
+    environment:
+      - PYTHONUNBUFFERED=1 
+    depends_on:
+      - agent
 
-volumes:
-  agentmodel:
+  train_restore:
+    ipc: host
+    runtime: nvidia
+    image: kulhanek/visual-navigation-agent-pytorch
+    volumes:
+      - ./agentmodel:/model
+    environment:
+      - PYTHONUNBUFFERED=1 
+    depends_on:
+      - agent
+    command: "python -u /app/train.py --restore"
+
+  bash:
+    command: 'bash'
+    runtime: nvidia
+    depends_on:
+      - agent
+    image: kulhanek/visual-navigation-agent-pytorch
