@@ -18,7 +18,7 @@ from contextlib import suppress
 import re
 from agent.constants import TOTAL_PROCESSED_FRAMES
 from agent.constants import TASK_LIST
-from agent.constants import SAVING_PERIOD
+from agent.constants import SAVING_PERIOD, MAX_STEP
 
 from agent.resnet import resnet50
 
@@ -188,17 +188,16 @@ class Training:
         self.grad_norm = config.get('grad_norm', 40.0)
         self.tasks = config.get('tasks', TASK_LIST)
         self.checkpoint_path = config.get('checkpoint_path', 'model/checkpoint-{checkpoint}.pth')
-        self.max_t = config.get('max_t', 5)
+        self.max_t = config.get('max_t', MAX_STEP)
         self.num_thread = config.get('num_thread', 1)
-        self.total_epochs = TOTAL_PROCESSED_FRAMES // self.max_t
+        self.total_epochs = TOTAL_PROCESSED_FRAMES
         self.initialize()
 
     @staticmethod
     def load_checkpoint(config, fail = True):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         checkpoint_path = config.get('checkpoint_path', 'model/checkpoint-{checkpoint}.pth')
-        max_t = config.get('max_t', 5)
-        total_epochs = TOTAL_PROCESSED_FRAMES // max_t
+        total_epochs = TOTAL_PROCESSED_FRAMES 
         files = os.listdir(os.path.dirname(checkpoint_path))
         base_name = os.path.basename(checkpoint_path)
         
@@ -323,7 +322,7 @@ class Training:
 
         
         # self.threads = [_createThread(i, task) for i, task in enumerate(branches)]
-        
+        print(f"Running for {TOTAL_PROCESSED_FRAMES}")
         try:
             for thread in self.threads:
                 thread.start()

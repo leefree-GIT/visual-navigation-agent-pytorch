@@ -1,6 +1,7 @@
 from agent.network import SceneSpecificNetwork, SharedNetwork, ActorCriticLoss, SharedResnet, compare_models
 from agent.environment import Environment, THORDiscreteEnvironment
 from agent.resnet import resnet50
+from agent.constants import MAX_STEP
 
 import torch.nn as nn
 from typing import Dict, Collection
@@ -102,7 +103,7 @@ class TrainingThread(mp.Process):
         self.gamma : float = self.init_args.get('gamma', 0.99)
         self.grad_norm: float = self.init_args.get('grad_norm', 40.0)
         entropy_beta : float = self.init_args.get('entropy_beta', 0.01)
-        self.max_t : int = self.init_args.get('max_t', 5)# TODO: 5)
+        self.max_t : int = self.init_args.get('max_t', MAX_STEP)# TODO: 5)
         self.local_t = 0
         self.action_space_size = self.get_action_space_size()
 
@@ -187,7 +188,7 @@ class TrainingThread(mp.Process):
 
             if is_terminal:
                 # TODO: add logging
-                print(f"time {self.optimizer.get_global_step()} | thread #{self.id} | scene {self.scene} | target #{self.env.terminal_state_id}")
+                print(f"time {self.optimizer.get_global_step() * self.max_t} | thread #{self.id} | scene {self.scene} | target #{self.env.terminal_state_id}")
 
                 print('playout finished')
                 print(f'episode length: {self.episode_length}')
@@ -196,7 +197,7 @@ class TrainingThread(mp.Process):
                 print(f'episode max_q: {self.episode_max_q}')
                 
                 scene_log = self.scene + '-' + str(self.init_args.get('terminal_state_id', -1))
-                step = self.optimizer.get_global_step()
+                step = self.optimizer.get_global_step() * self.max_t
                 self.writer.add_scalar(scene_log + '/episode_length', self.episode_length, step)
                 self.writer.add_scalar(scene_log + '/max_q', float(self.episode_max_q), step)
                 self.writer.add_scalar(scene_log + '/reward', float(self.episode_reward), step)
@@ -267,7 +268,7 @@ class TrainingThread(mp.Process):
 
         try:
             self.env.reset()
-            while True and not self.exit.is_set() and self.optimizer.get_global_step() < self.max_step:
+            while True and not self.exit.is_set() and self.optimizer.get_global_step() * self.max_t < self.max_step:
                 self._sync_network()
                 # Plays some samples
                 playout_reward, results, rollout_path = self._forward_explore()
@@ -279,6 +280,7 @@ class TrainingThread(mp.Process):
                 # Trigger save or other
                 self.saver.after_optimization()                
                 # pass
+            self.writer.close()
             # compare_models(self.resnet_model.resnet, self.resnet_network)
         except Exception as e:
             print(e)
