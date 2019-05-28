@@ -10,7 +10,7 @@ services:
   train:
     ipc: host
     runtime: nvidia
-    command: "python -u /app/train.py --num_thread 5"
+    command: "OMP_NUM_THREADS=1 python -u /app/train.py --num_thread 5"
     image: kulhanek/visual-navigation-agent-pytorch
     volumes:
       - ./agentmodel:/model
@@ -41,7 +41,7 @@ services:
       - PYTHONUNBUFFERED=1 
     depends_on:
       - agent
-    command: "python -u /app/train.py --restore"
+    command: "OMP_NUM_THREADS=1 python -u /app/train.py --restore"
 
   bash:
     command: 'bash'
