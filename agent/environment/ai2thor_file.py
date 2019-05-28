@@ -7,6 +7,8 @@ import random
 import skimage.io
 from skimage.transform import resize
 from agent.environment.environment import Environment
+from agent.constants import USE_RESNET
+import torch.multiprocessing as mp
 from torchvision import transforms
 import torchvision.transforms.functional as F
 import torch
@@ -22,7 +24,9 @@ class THORDiscreteEnvironment(Environment):
             screen_height = 224,
             terminal_state_id = 0,
             h5_file_path = None,
-            obs_preloaded = None,
+            input_queue: mp.Queue = None,
+            output_queue: mp.Queue = None,
+            evt: mp.Event = None,
             **kwargs):
         super(THORDiscreteEnvironment, self).__init__()
 
@@ -32,12 +36,10 @@ class THORDiscreteEnvironment(Environment):
             h5_file_path = f"/app/data/{scene_name}.h5"
         elif callable(h5_file_path):
             h5_file_path = h5_file_path(scene_name)
+
+        self.scene = scene_name
             
-        if resnet_trained is not None:
-            self.resnet_trained = resnet_trained
-            self.use_resnet = True
-        else:
-            self.use_resnet = False
+        self.use_resnet = USE_RESNET
 
         self.terminal_state_id = terminal_state_id
 
@@ -47,7 +49,6 @@ class THORDiscreteEnvironment(Environment):
 
         self.locations = self.h5_file['location'][()]
         self.rotations = self.h5_file['rotation'][()]
-        self.resized_obs_tens = obs_preloaded
 
         self.history_length = history_length
 
@@ -66,8 +67,17 @@ class THORDiscreteEnvironment(Environment):
                 transforms.ToTensor(), 
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
 
-        self.s_target = self._tiled_state(self.terminal_state_id)
+        self.i_queue = input_queue
+        self.o_queue = output_queue
+        self.evt = evt
         self.time = 0
+
+
+
+
+        # LAST instruction
+        self.s_target = self._tiled_state(self.terminal_state_id)
+
 
     def reset(self):
         # randomize initial state
@@ -117,11 +127,13 @@ class THORDiscreteEnvironment(Environment):
         if not self.use_resnet:
             return self.h5_file['resnet_feature'][state_id][k][:,np.newaxis]
         else:
-            input_tens = self.resized_obs_tens[state_id]
-            input_tens = input_tens.to(next(self.resnet_trained.parameters()).device)
-            input_tens = input_tens.unsqueeze(0)
-            res = self.resnet_trained((input_tens,))
-            return res.permute(1,0).cpu()
+            self.o_queue.put((self.scene, state_id))
+            self.evt.set()
+            return self.i_queue.get()
+            # input_tens = input_tens.to(next(self.resnet_trained.parameters()).device)
+            # input_tens = input_tens.unsqueeze(0)
+            # res = self.resnet_trained((input_tens,))
+            # return res.permute(1,0).cpu()
 
     def _tiled_state(self, state_id):
         f = self._get_state(state_id)

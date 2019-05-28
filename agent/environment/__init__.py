@@ -1,8 +1,7 @@
 from agent.environment.environment import Environment
-from agent.environment.ai2thor import THORDiscreteEnvironment
+from agent.environment.ai2thor_file import THORDiscreteEnvironment
 
-
-class AI2ThorEnvironment:
+class AI2ThorEnvironment(Environment):
     '''
     name:
         Can be one of those:

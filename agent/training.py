@@ -1,5 +1,6 @@
 from agent.network import SharedNetwork, SceneSpecificNetwork, SharedResnet, compare_models
 from agent.training_thread import TrainingThread
+from agent.gpu_thread import GPUThread
 from agent.optim import SharedRMSprop
 from typing import Collection, List
 import torch.nn as nn
@@ -18,7 +19,7 @@ from contextlib import suppress
 import re
 from agent.constants import TOTAL_PROCESSED_FRAMES
 from agent.constants import TASK_LIST
-from agent.constants import SAVING_PERIOD, MAX_STEP
+from agent.constants import SAVING_PERIOD, MAX_STEP, USE_RESNET
 
 from agent.resnet import resnet50
 
@@ -27,41 +28,6 @@ import logging
 logging.basicConfig(level=logging.DEBUG)
 
 # Preprocess obs to match resnet input 
-def preprocess_obs(scenes, h5_file_path):
-    device = torch.device("cpu")
-    h5_path = lambda scene: h5_file_path.replace('{scene}', scene)
-    d = dict()
-    transform = transforms.Compose([
-    transforms.Resize((224,224)), 
-    transforms.ToTensor(), 
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
-
-
-
-    for scene in scenes:
-        h5_file = h5py.File(h5_path(scene), 'r')
-        if not scene in d:
-            obs = h5_file['observation'][0]
-            # resized = resize(obs, (224,224)).astype(dtype=np.float32)
-            resized_tens_cat = torch.from_numpy(obs).to(device)
-            resized_tens_cat = transform(F.to_pil_image(resized_tens_cat))
-            resized_tens_cat = resized_tens_cat.unsqueeze(0)
-            resized_tens_cat = resized_tens_cat.share_memory_()
-
-            for i in range(1,len(h5_file['observation'])):
-                obs = h5_file['observation'][i]
-                resized_tens = torch.from_numpy(obs).to(device)
-                resized_tens = transform(F.to_pil_image(resized_tens))
-                resized_tens = resized_tens.unsqueeze(0)
-                resized_tens = resized_tens.share_memory_()
-                resized_tens_cat = torch.cat((resized_tens_cat, resized_tens), 0)
-            resized_tens_cat = resized_tens_cat.share_memory_()
-
-            logging.info(f"Tensor for scene {scene} created")
-            size_v = resized_tens_cat.element_size() * resized_tens_cat.nelement()
-            logging.info(f"{scene} size = {size_v}.")
-            d[scene] = resized_tens_cat
-    return d
 
 class TrainingSaver:
     def __init__(self, shared_network, scene_networks, optimizer, config):
@@ -271,13 +237,10 @@ class Training:
 
         # Preprocess obs
 
-        use_resnet = False
-        if use_resnet:
-            h5_file_path = self.config.get('h5_file_path')
-            d_obs = preprocess_obs(TASK_LIST.keys(), h5_file_path)
+        use_resnet = USE_RESNET
 
 
-        def _createThread(id, task):
+        def _createThread(id, task, i_queue, o_queue, evt):
             (scene, target) = task
             net = nn.Sequential(self.shared_network, self.scene_networks[scene])
             net.share_memory()
@@ -291,10 +254,10 @@ class Training:
                     saver = self.saver,
                     max_t = self.max_t,
                     terminal_state_id = target,
-                    max_step = TOTAL_PROCESSED_FRAMES,
-                    resnet_trained = resnet_custom,
                     device = self.device,
-                    obs_preloaded = d_obs[scene],
+                    input_queue = i_queue,
+                    output_queue = o_queue,
+                    evt = evt,
                     **self.config)
             else:
                 return TrainingThread(
@@ -305,20 +268,38 @@ class Training:
                     saver = self.saver,
                     max_t = self.max_t,
                     terminal_state_id = target,
-                    max_step = TOTAL_PROCESSED_FRAMES,
-                    resnet_trained = resnet_custom,
                     device = self.device,
-                    obs_preloaded = None,
+                    input_queue = i_queue,
+                    output_queue = o_queue,
+                    evt = evt,
                     **self.config)
 
         num_scene_task =  len(branches)
+
+
         if self.num_thread < num_scene_task:
             self.num_thread = num_scene_task
             print('ERROR: num_thread must be higher than ', num_scene_task)
 
         self.threads = []
+
+
+        input_queues = []
+        output_queues = []
+        evt = mp.Event()
         for i in range(self.num_thread):
-            self.threads.append(_createThread(i, branches[i%num_scene_task]))
+            input_queue = mp.Queue()
+            output_queue = mp.Queue()
+            input_queues.append(input_queue)
+            output_queues.append(output_queue)
+
+        if use_resnet:
+            h5_file_path = self.config.get('h5_file_path')
+            self.threads.append(GPUThread(resnet_custom, self.device, input_queues, output_queues, list(TASK_LIST.keys()), h5_file_path, evt))
+
+        for i in range(self.num_thread):
+            self.threads.append(_createThread(i, branches[i%num_scene_task], output_queues[i], input_queues[i], evt))
+        
 
         
         # self.threads = [_createThread(i, task) for i, task in enumerate(branches)]

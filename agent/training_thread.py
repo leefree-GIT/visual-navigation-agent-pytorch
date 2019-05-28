@@ -1,7 +1,6 @@
-from agent.network import SceneSpecificNetwork, SharedNetwork, ActorCriticLoss, SharedResnet, compare_models
+from agent.network import SceneSpecificNetwork, SharedNetwork, ActorCriticLoss, SharedResnet
 from agent.environment import Environment, THORDiscreteEnvironment
-from agent.resnet import resnet50
-from agent.constants import MAX_STEP
+from agent.constants import MAX_STEP, EARLY_STOP, TOTAL_PROCESSED_FRAMES
 
 import torch.nn as nn
 from typing import Dict, Collection
@@ -49,9 +48,9 @@ class TrainingThread(mp.Process):
             saver,
             optimizer,
             scene : str,
-            max_step: int,
-            resnet_trained: torch.nn.Module,
-            obs_preloaded: torch.tensor,
+            input_queue: mp.Queue,
+            output_queue: mp.Queue,
+            evt,
             **kwargs):
 
         super(TrainingThread, self).__init__()
@@ -64,19 +63,16 @@ class TrainingThread(mp.Process):
         self.local_backbone_network = SharedNetwork()
         self.id = id
 
-        if obs_preloaded is None:
-            self.use_resnet = False
-        else:
-            self.use_resnet = True
+        
 
         self.master_network = network
-        self.resnet_network = resnet_trained
         self.optimizer = optimizer
 
         self.exit = mp.Event()
-        self.max_step = max_step
         self.local_t = 0
-        self.obs_preloaded = obs_preloaded
+        self.i_queue = input_queue
+        self.o_queue = output_queue
+        self.evt = evt
 
     def _sync_network(self):
         state_dict = self.master_network.state_dict()
@@ -96,10 +92,13 @@ class TrainingThread(mp.Process):
         # self.logger = logging.getLogger('agent')
         # self.logger.setLevel(logging.INFO)
         self.init_args['h5_file_path'] = lambda scene: h5_file_path.replace('{scene}', scene)
-        if self.use_resnet:
-            self.env = THORDiscreteEnvironment(self.scene, resnet_trained = self.resnet_network, obs_preloaded = self.obs_preloaded, **self.init_args)
-        else:
-            self.env = THORDiscreteEnvironment(self.scene, resnet_trained = None, obs_preloaded = self.obs_preloaded, **self.init_args)
+        
+        self.env = THORDiscreteEnvironment(self.scene,
+                                            input_queue = self.i_queue,
+                                            output_queue = self.o_queue, 
+                                            evt = self.evt,
+                                            **self.init_args)
+
         self.gamma : float = self.init_args.get('gamma', 0.99)
         self.grad_norm: float = self.init_args.get('grad_norm', 40.0)
         entropy_beta : float = self.init_args.get('entropy_beta', 0.01)
@@ -268,7 +267,7 @@ class TrainingThread(mp.Process):
 
         try:
             self.env.reset()
-            while True and not self.exit.is_set() and self.optimizer.get_global_step() * self.max_t < self.max_step:
+            while True and not self.exit.is_set() and self.optimizer.get_global_step() * self.max_t < EARLY_STOP:
                 self._sync_network()
                 # Plays some samples
                 playout_reward, results, rollout_path = self._forward_explore()
@@ -280,7 +279,7 @@ class TrainingThread(mp.Process):
                 # Trigger save or other
                 self.saver.after_optimization()                
                 # pass
-            self.writer.close()
+            self.stop()
             # compare_models(self.resnet_model.resnet, self.resnet_network)
         except Exception as e:
             print(e)
@@ -290,4 +289,6 @@ class TrainingThread(mp.Process):
 
     def stop(self):
         print("Stop initiated")
+        self.writer.close()
+        self.evt.set()
         self.exit.set()

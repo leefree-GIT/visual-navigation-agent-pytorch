@@ -29,9 +29,9 @@ if __name__ == '__main__':
 
     args = vars(parser.parse_args())
 
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # torch.backends.cudnn.enabled = False
-    device = torch.device('cpu')
+    # device = torch.device('cpu')
 
     print(torch.get_num_threads())
     if args['restore']:
