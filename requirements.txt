@@ -3,3 +3,4 @@ ai2thor
 Cython
 scikit-image
 h5py
+tensorboardX

@@ -14,6 +14,7 @@ import torch.multiprocessing as mp
 import torch.nn.functional as F
 import numpy as np
 import logging
+from tensorboardX import SummaryWriter
 
 import sys
 import pdb
@@ -62,6 +63,11 @@ class TrainingThread(mp.Process):
         self.local_backbone_network = SharedNetwork()
         self.id = id
 
+        if obs_preloaded is None:
+            self.use_resnet = False
+        else:
+            self.use_resnet = True
+
         self.master_network = network
         self.resnet_network = resnet_trained
         self.optimizer = optimizer
@@ -89,8 +95,10 @@ class TrainingThread(mp.Process):
         # self.logger = logging.getLogger('agent')
         # self.logger.setLevel(logging.INFO)
         self.init_args['h5_file_path'] = lambda scene: h5_file_path.replace('{scene}', scene)
-        self.env = THORDiscreteEnvironment(self.scene, self.resnet_network, obs_preloaded = self.obs_preloaded, **self.init_args)
-
+        if self.use_resnet:
+            self.env = THORDiscreteEnvironment(self.scene, resnet_trained = self.resnet_network, obs_preloaded = self.obs_preloaded, **self.init_args)
+        else:
+            self.env = THORDiscreteEnvironment(self.scene, resnet_trained = None, obs_preloaded = self.obs_preloaded, **self.init_args)
         self.gamma : float = self.init_args.get('gamma', 0.99)
         self.grad_norm: float = self.init_args.get('grad_norm', 40.0)
         entropy_beta : float = self.init_args.get('entropy_beta', 0.01)
@@ -103,6 +111,8 @@ class TrainingThread(mp.Process):
         # Initialize the episode
         self._reset_episode()
         self._sync_network()
+
+        self.writer = SummaryWriter("runs/log_output",filename_suffix='id_' + str(self.id) + '_')
 
 
     def _reset_episode(self):
@@ -177,11 +187,20 @@ class TrainingThread(mp.Process):
 
             if is_terminal:
                 # TODO: add logging
+                print(f"time {self.optimizer.get_global_step()} | thread #{self.id} | scene {self.scene} | target #{self.env.terminal_state_id}")
+
                 print('playout finished')
                 print(f'episode length: {self.episode_length}')
                 print(f'episode shortest length: {self.env.shortest_path_distance_start}')
                 print(f'episode reward: {self.episode_reward}')
                 print(f'episode max_q: {self.episode_max_q}')
+                
+                scene_log = self.scene + '-' + str(self.init_args.get('terminal_state_id', -1))
+                step = self.optimizer.get_global_step()
+                self.writer.add_scalar(scene_log + '/episode_length', self.episode_length, step)
+                self.writer.add_scalar(scene_log + '/max_q', float(self.episode_max_q), step)
+                self.writer.add_scalar(scene_log + '/reward', float(self.episode_reward), step)
+                self.writer.add_scalar(scene_log + '/learning_rate', float(self.optimizer.scheduler.get_lr()[0]), step)
 
                 terminal_end = True
                 self._reset_episode()

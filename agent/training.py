@@ -22,6 +22,7 @@ from agent.constants import SAVING_PERIOD
 
 from agent.resnet import resnet50
 
+from tensorboardX import SummaryWriter
 import logging
 logging.basicConfig(level=logging.DEBUG)
 
@@ -49,17 +50,17 @@ def preprocess_obs(scenes, h5_file_path):
 
             for i in range(1,len(h5_file['observation'])):
                 obs = h5_file['observation'][i]
-                resized_tens_cat = torch.from_numpy(obs).to(device)
-                resized_tens_cat = transform(F.to_pil_image(resized_tens_cat))
-                resized_tens_cat = resized_tens_cat.unsqueeze(0)
-                resized_tens_cat = resized_tens_cat.share_memory_()
+                resized_tens = torch.from_numpy(obs).to(device)
+                resized_tens = transform(F.to_pil_image(resized_tens))
+                resized_tens = resized_tens.unsqueeze(0)
+                resized_tens = resized_tens.share_memory_()
                 resized_tens_cat = torch.cat((resized_tens_cat, resized_tens), 0)
-        resized_tens_cat = resized_tens_cat.share_memory_()
+            resized_tens_cat = resized_tens_cat.share_memory_()
 
-        logging.info(f"Tensor for scene {scene} created")
-        size_v = resized_tens_cat.element_size() * resized_tens_cat.nelement()
-        logging.info(f"{scene} size = {size_v}.")
-        d[scene] = resized_tens_cat
+            logging.info(f"Tensor for scene {scene} created")
+            size_v = resized_tens_cat.element_size() * resized_tens_cat.nelement()
+            logging.info(f"{scene} size = {size_v}.")
+            d[scene] = resized_tens_cat
     return d
 
 class TrainingSaver:
@@ -160,16 +161,20 @@ class TrainingOptimizer:
             
         self._ensure_shared_grads(local_params, shared_params)
         self.optimizer.step()
+    def get_lr(self):
+        for param_group in self.optimizer.param_groups:
+            return param_group['lr']
 
 class AnnealingLRScheduler(torch.optim.lr_scheduler._LRScheduler):
-    def __init__(self, optimizer, total_epochs, last_epoch=-1):
+    def __init__(self, optimizer, total_epochs, max_t, last_epoch=-1):
         self.optimizer = optimizer
         self.last_epoch = last_epoch
         self.total_epochs = total_epochs
+        self.max_t = max_t
         super(AnnealingLRScheduler, self).__init__(optimizer, last_epoch)
 
     def get_lr(self):
-        return [base_lr * (1.0 - self.last_epoch / self.total_epochs)
+        return [base_lr * (1.0 - (self.last_epoch * self.max_t) / self.total_epochs)
                 for base_lr in self.base_lrs]
 
 class Training:
@@ -237,7 +242,7 @@ class Training:
         optimizer.share_memory()
 
         # Create scheduler
-        scheduler = AnnealingLRScheduler(optimizer, self.total_epochs)
+        scheduler = AnnealingLRScheduler(optimizer, self.total_epochs, self.max_t)
 
         # Create optimizer wrapper
         optimizer_wrapper = TrainingOptimizer(self.grad_norm, optimizer, scheduler)
@@ -266,8 +271,11 @@ class Training:
 
 
         # Preprocess obs
-        h5_file_path = self.config.get('h5_file_path')
-        d_obs = preprocess_obs(TASK_LIST.keys(), h5_file_path)
+
+        use_resnet = False
+        if use_resnet:
+            h5_file_path = self.config.get('h5_file_path')
+            d_obs = preprocess_obs(TASK_LIST.keys(), h5_file_path)
 
 
         def _createThread(id, task):
@@ -275,20 +283,34 @@ class Training:
             net = nn.Sequential(self.shared_network, self.scene_networks[scene])
             net.share_memory()
 
-
-            return TrainingThread(
-                id = id,
-                optimizer = self.optimizer,
-                network = net,
-                scene = scene,
-                saver = self.saver,
-                max_t = self.max_t,
-                terminal_state_id = target,
-                max_step = TOTAL_PROCESSED_FRAMES,
-                resnet_trained = resnet_custom,
-                device = self.device,
-                obs_preloaded = d_obs[scene],
-                **self.config)
+            if use_resnet:
+                return TrainingThread(
+                    id = id,
+                    optimizer = self.optimizer,
+                    network = net,
+                    scene = scene,
+                    saver = self.saver,
+                    max_t = self.max_t,
+                    terminal_state_id = target,
+                    max_step = TOTAL_PROCESSED_FRAMES,
+                    resnet_trained = resnet_custom,
+                    device = self.device,
+                    obs_preloaded = d_obs[scene],
+                    **self.config)
+            else:
+                return TrainingThread(
+                    id = id,
+                    optimizer = self.optimizer,
+                    network = net,
+                    scene = scene,
+                    saver = self.saver,
+                    max_t = self.max_t,
+                    terminal_state_id = target,
+                    max_step = TOTAL_PROCESSED_FRAMES,
+                    resnet_trained = resnet_custom,
+                    device = self.device,
+                    obs_preloaded = None,
+                    **self.config)
 
         num_scene_task =  len(branches)
         if self.num_thread < num_scene_task:
