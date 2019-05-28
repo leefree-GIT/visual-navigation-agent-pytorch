@@ -102,3 +102,19 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+# Ignore everything
+/*
+
+#Except
+!.gitignore
+!agent/
+!agent/environment/
+!eval.py
+!train.py
+!docker-compose.yaml
+!Dockerfile
+!LICENSE
+!README.md
+!requirements.txt
+!.dockerignore
+!*/data/download_scene_dumps.sh
