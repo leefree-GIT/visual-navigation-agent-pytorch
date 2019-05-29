@@ -295,7 +295,7 @@ class Training:
 
         if use_resnet:
             h5_file_path = self.config.get('h5_file_path')
-            self.threads.append(GPUThread(resnet_custom, self.device, input_queues, output_queues, list(TASK_LIST.keys()), h5_file_path, evt))
+            self.gpu = GPUThread(resnet_custom, self.device, input_queues, output_queues, list(TASK_LIST.keys()), h5_file_path, evt)
 
         for i in range(self.num_thread):
             self.threads.append(_createThread(i, branches[i%num_scene_task], output_queues[i], input_queues[i], evt))
@@ -305,11 +305,16 @@ class Training:
         # self.threads = [_createThread(i, task) for i, task in enumerate(branches)]
         print(f"Running for {TOTAL_PROCESSED_FRAMES}")
         try:
+            if use_resnet:
+                self.gpu.start()
             for thread in self.threads:
                 thread.start()
 
             for thread in self.threads:
                 thread.join()
+            if use_resnet:
+                self.gpu.stop()
+                self.gpu.join()
             self.saver.save()
         except KeyboardInterrupt:
             # we will save the training

@@ -16,7 +16,6 @@ import torch
 class THORDiscreteEnvironment(Environment):
     def __init__(self, 
             scene_name = 'bedroom_04',
-            resnet_trained = None,
             random_start = True,
             n_feat_per_location = 1,
             history_length : int = 4,
@@ -62,15 +61,16 @@ class THORDiscreteEnvironment(Environment):
 
         self.shortest_path_distances = self.h5_file['shortest_path_distance'][()]
 
-        self.normalize = transforms.Compose([
-                transforms.Resize((224,224)), 
-                transforms.ToTensor(), 
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
 
         self.i_queue = input_queue
         self.o_queue = output_queue
         self.evt = evt
         self.time = 0
+
+        self.transform = transforms.Compose([
+        transforms.Resize((224,224)), 
+        transforms.ToTensor(), 
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
 
 
 
@@ -127,7 +127,11 @@ class THORDiscreteEnvironment(Environment):
         if not self.use_resnet:
             return self.h5_file['resnet_feature'][state_id][k][:,np.newaxis]
         else:
-            self.o_queue.put((self.scene, state_id))
+            obs = self.h5_file['observation'][state_id]
+            frame_tensor = torch.from_numpy(obs)
+            frame_tensor = self.transform(F.to_pil_image(frame_tensor))
+            frame_tensor = frame_tensor.unsqueeze(0)
+            self.o_queue.put(frame_tensor)
             self.evt.set()
             return self.i_queue.get()
             # input_tens = input_tens.to(next(self.resnet_trained.parameters()).device)

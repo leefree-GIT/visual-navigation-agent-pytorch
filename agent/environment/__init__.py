@@ -1,5 +1,5 @@
 from agent.environment.environment import Environment
-from agent.environment.ai2thor_file import THORDiscreteEnvironment
+from agent.environment.ai2thor_real import THORDiscreteEnvironment
 
 class AI2ThorEnvironment(Environment):
     '''

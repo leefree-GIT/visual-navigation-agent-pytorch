@@ -26,14 +26,11 @@ class GPUThread(mp.Process):
         self.h5_file_path = h5_file_path
         self.evt = evt
 
+
     def _preprocess_obs(self, scenes, h5_file_path):
         device = torch.device('cuda')
         h5_path = lambda scene: h5_file_path.replace('{scene}', scene)
         self.d = dict()
-        transform = transforms.Compose([
-        transforms.Resize((224,224)), 
-        transforms.ToTensor(), 
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
 
 
 
@@ -53,7 +50,6 @@ class GPUThread(mp.Process):
                     resized_tens = resized_tens.unsqueeze(0)
                     resized_tens = resized_tens.share_memory_()
                     resized_tens_cat = torch.cat((resized_tens_cat, resized_tens), 0)
-                print(resized_tens_cat.size())
                 resized_tens_cat = resized_tens_cat.share_memory_()
                 resized_tens_cat = resized_tens_cat.to(device)
 
@@ -62,21 +58,28 @@ class GPUThread(mp.Process):
                 logging.info(f"{scene} size = {size_v}.")
                 self.d[scene] = resized_tens_cat
     def run(self):
-        self._preprocess_obs(self.scenes, self.h5_file_path)
+        # self._preprocess_obs(self.scenes, self.h5_file_path)
         self.model = self.model.to(self.device)
         print("GPUThread starting")
         while True and not self.exit.is_set():
+            self.evt.wait()
             for ind, i_q in enumerate(self.i_queues):
                 try:
-                    self.evt.wait()
-                    scene, state = i_q.get(False)
-                    res_obs_scene = self.d[scene][state]
-                    tensor = res_obs_scene.to(self.device)
-                    tensor = tensor.unsqueeze(0)
+                    frame = i_q.get(False)
+                    tensor = frame.to(self.device)
                     output_tensor = self.model((tensor,))
                     output_tensor = output_tensor.permute(1,0)
                     output_tensor = output_tensor.cpu()
                     self.o_queues[ind].put(output_tensor)
+                    # self.evt.wait()
+                    # scene, state = i_q.get(False)
+                    # res_obs_scene = self.d[scene][state]
+                    # tensor = res_obs_scene.to(self.device)
+                    # tensor = tensor.unsqueeze(0)
+                    # output_tensor = self.model((tensor,))
+                    # output_tensor = output_tensor.permute(1,0)
+                    # output_tensor = output_tensor.cpu()
+                    # self.o_queues[ind].put(output_tensor)
 
                 except queue.Empty as e:
                     pass
