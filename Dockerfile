@@ -1,7 +1,7 @@
-# FROM pytorch/pytorch:1.1.0-cuda10.0-cudnn7.5-runtime
-FROM pytorch/pytorch:1.0.1-cuda10.0-cudnn7-runtime
-# Prefetch ai2thor data
-RUN apt-get update && apt-get -y install wget unzip 
+FROM pytorch/pytorch:1.1.0-cuda10.0-cudnn7.5-runtime
+
+
+RUN apt-get update && apt-get -y install wget unzip
 
 WORKDIR /app/data
 

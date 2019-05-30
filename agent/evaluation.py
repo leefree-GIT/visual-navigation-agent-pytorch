@@ -1,6 +1,7 @@
 
 
-from agent.network import SharedNetwork, SceneSpecificNetwork
+from agent.network import SharedNetwork, SceneSpecificNetwork, SharedResnet
+from agent.resnet import resnet50
 from agent.environment import THORDiscreteEnvironment
 from agent.training import TrainingSaver, TOTAL_PROCESSED_FRAMES
 from agent.utils import find_restore_point
@@ -12,10 +13,16 @@ import numpy as np
 import re
 from itertools import groupby
 
+import torch.multiprocessing as mp
+
+
+from agent.gpu_thread import GPUThread
+
 from agent.constants import TASK_LIST
 from agent.constants import ACTION_SPACE_SIZE
 from agent.constants import NUM_EVAL_EPISODES
-from agent.constants import VERBOSE
+from agent.constants import VERBOSE, USE_RESNET
+import time
 
 
 
@@ -56,11 +63,40 @@ class Evaluation:
     def run(self):
         scene_stats = dict()
         resultData = []
+
+        if USE_RESNET:
+            mp.set_start_method('spawn')
+            device = torch.device("cuda")
+            # Download pretrained resnet
+            resnet_trained = resnet50(pretrained=True)
+            resnet_trained.to(device)
+            resnet_custom = SharedResnet()
+            resnet_custom.load_resnet_pretrained(resnet_trained.state_dict())
+            resnet_custom.to(device)
+            resnet_custom.share_memory()
+            resnet_custom.resnet.share_memory()
+
+            input_queue = mp.Queue()
+            output_queue = mp.Queue()
+            h5_file_path = self.config.get('h5_file_path')
+            evt = mp.Event()
+            gpu_thread = GPUThread(resnet_custom, device, [input_queue], [output_queue], list(TASK_LIST.keys()), h5_file_path, evt)
+            gpu_thread.start()
         for scene_scope, items in TASK_LIST.items():
             scene_net = self.scene_nets[scene_scope]
             scene_stats[scene_scope] = list()
             for task_scope in items:
-                env = THORDiscreteEnvironment(
+                if USE_RESNET:
+                    env = THORDiscreteEnvironment(
+                        scene_name=scene_scope,
+                        input_queue=output_queue,
+                        output_queue=input_queue,
+                        evt = evt,
+                        h5_file_path=(lambda scene: self.config.get("h5_file_path", "D:\\datasets\\visual_navigation_precomputed\\{scene}.h5").replace('{scene}', scene)),
+                        terminal_state_id=int(task_scope)
+                    )
+                else:
+                    env = THORDiscreteEnvironment(
                     scene_name=scene_scope,
                     h5_file_path=(lambda scene: self.config.get("h5_file_path", "D:\\datasets\\visual_navigation_precomputed\\{scene}.h5").replace('{scene}', scene)),
                     terminal_state_id=int(task_scope)
@@ -83,6 +119,7 @@ class Evaluation:
 
                         with torch.no_grad():
                             action = F.softmax(policy, dim=0).multinomial(1).data.numpy()[0]
+
                         env.step(action)
                         terminal = env.is_terminal
 
@@ -109,6 +146,9 @@ class Evaluation:
         
         if 'csv_file' in self.config and self.config['csv_file'] is not None:
             export_to_csv(resultData, self.config['csv_file'])
+        if USE_RESNET:
+            gpu_thread.stop()
+            gpu_thread.join()
 
 '''
 # Load weights trained on tensorflow

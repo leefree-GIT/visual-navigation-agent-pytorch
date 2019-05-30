@@ -32,7 +32,7 @@ class GPUThread(mp.Process):
         self.d = dict()
         transform = transforms.Compose([
         transforms.Resize((224,224)), 
-        transforms.ToTensor(), 
+        transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
 
 
@@ -66,9 +66,9 @@ class GPUThread(mp.Process):
         self.model = self.model.to(self.device)
         print("GPUThread starting")
         while True and not self.exit.is_set():
+            self.evt.wait()
             for ind, i_q in enumerate(self.i_queues):
                 try:
-                    self.evt.wait()
                     scene, state = i_q.get(False)
                     res_obs_scene = self.d[scene][state]
                     tensor = res_obs_scene.to(self.device)
@@ -77,6 +77,7 @@ class GPUThread(mp.Process):
                     output_tensor = output_tensor.permute(1,0)
                     output_tensor = output_tensor.cpu()
                     self.o_queues[ind].put(output_tensor)
+                    self.evt.clear()
 
                 except queue.Empty as e:
                     pass

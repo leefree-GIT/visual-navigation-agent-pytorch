@@ -10,13 +10,14 @@ services:
   train:
     ipc: host
     runtime: nvidia
-    command: "OMP_NUM_THREADS=1 python -u /app/train.py --num_thread 5"
+    command: "python -u /app/train.py --num_thread 5"
     image: kulhanek/visual-navigation-agent-pytorch
     volumes:
       - ./agentmodel:/model
       - ./runs:/app/runs
     environment:
       - PYTHONUNBUFFERED=1 
+      - OMP_NUM_THREADS=1
     depends_on:
       - agent
   eval:
@@ -28,6 +29,7 @@ services:
       - ./agentmodel:/model
     environment:
       - PYTHONUNBUFFERED=1 
+      - OMP_NUM_THREADS=1
     depends_on:
       - agent
 
@@ -39,13 +41,18 @@ services:
       - ./agentmodel:/model
     environment:
       - PYTHONUNBUFFERED=1 
+      - OMP_NUM_THREADS=1
     depends_on:
       - agent
-    command: "OMP_NUM_THREADS=1 python -u /app/train.py --restore"
+    command: "python -u /app/train.py --restore"
 
   bash:
     command: 'bash'
     runtime: nvidia
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
     depends_on:
       - agent
+    environment:
+      - DISPLAY=${DISPLAY}
     image: kulhanek/visual-navigation-agent-pytorch

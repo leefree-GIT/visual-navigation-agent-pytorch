@@ -4,3 +4,4 @@ Cython
 scikit-image
 h5py
 tensorboardX
+torchvision
