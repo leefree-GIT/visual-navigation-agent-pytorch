@@ -232,7 +232,13 @@ class Training:
         compare_models(resnet_custom.resnet, resnet_trained)
 
         # Prepare threads
-        branches = [(scene, int(target)) for scene in TASK_LIST.keys() for target in TASK_LIST.get(scene)]
+        branches = []
+        for scene in TASK_LIST.keys():
+            it = 0
+            for target in TASK_LIST.get(scene):
+                target['id'] = it
+                it = it + 1
+                branches.append((scene, target))
 
 
         # Preprocess obs
@@ -253,7 +259,7 @@ class Training:
                     scene = scene,
                     saver = self.saver,
                     max_t = self.max_t,
-                    terminal_state_id = target,
+                    terminal_state = target,
                     device = self.device,
                     input_queue = i_queue,
                     output_queue = o_queue,
@@ -267,7 +273,7 @@ class Training:
                     scene = scene,
                     saver = self.saver,
                     max_t = self.max_t,
-                    terminal_state_id = target,
+                    terminal_state = target,
                     device = self.device,
                     input_queue = i_queue,
                     output_queue = o_queue,

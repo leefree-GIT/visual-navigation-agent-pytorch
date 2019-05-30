@@ -63,7 +63,7 @@ class Evaluation:
                 env = THORDiscreteEnvironment(
                     scene_name=scene_scope,
                     h5_file_path=(lambda scene: self.config.get("h5_file_path", "D:\\datasets\\visual_navigation_precomputed\\{scene}.h5").replace('{scene}', scene)),
-                    terminal_state_id=int(task_scope)
+                    terminal_state = task_scope
                 )
 
                 ep_rewards = []

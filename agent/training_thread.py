@@ -187,7 +187,7 @@ class TrainingThread(mp.Process):
 
             if is_terminal:
                 # TODO: add logging
-                print(f"time {self.optimizer.get_global_step() * self.max_t} | thread #{self.id} | scene {self.scene} | target #{self.env.terminal_state_id}")
+                print(f"time {self.optimizer.get_global_step() * self.max_t} | thread #{self.id} | scene {self.scene} | target #{self.env.terminal_state['id']}")
 
                 print('playout finished')
                 print(f'episode length: {self.episode_length}')
@@ -195,7 +195,7 @@ class TrainingThread(mp.Process):
                 print(f'episode reward: {self.episode_reward}')
                 print(f'episode max_q: {self.episode_max_q}')
                 
-                scene_log = self.scene + '-' + str(self.init_args.get('terminal_state_id', -1))
+                scene_log = self.scene + '-' + self.env.terminal_state['id']
                 step = self.optimizer.get_global_step() * self.max_t
                 self.writer.add_scalar(scene_log + '/episode_length', self.episode_length, step)
                 self.writer.add_scalar(scene_log + '/max_q', float(self.episode_max_q), step)
@@ -280,6 +280,7 @@ class TrainingThread(mp.Process):
                 self.saver.after_optimization()                
                 # pass
             self.stop()
+            self.writer.close()
             # compare_models(self.resnet_model.resnet, self.resnet_network)
         except Exception as e:
             print(e)
@@ -289,6 +290,5 @@ class TrainingThread(mp.Process):
 
     def stop(self):
         print("Stop initiated")
-        self.writer.close()
         self.evt.set()
         self.exit.set()

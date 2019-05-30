@@ -21,7 +21,7 @@ class THORDiscreteEnvironment(Environment):
             history_length : int = 4,
             screen_width = 224,
             screen_height = 224,
-            terminal_state_id = 0,
+            terminal_state = 0,
             h5_file_path = None,
             input_queue: mp.Queue = None,
             output_queue: mp.Queue = None,
@@ -40,7 +40,7 @@ class THORDiscreteEnvironment(Environment):
             
         self.use_resnet = USE_RESNET
 
-        self.terminal_state_id = terminal_state_id
+        self.terminal_state = terminal_state
 
         self.h5_file = h5py.File(h5_file_path, 'r')
 
@@ -54,7 +54,7 @@ class THORDiscreteEnvironment(Environment):
         self.n_locations = self.locations.shape[0]
 
         self.terminals = np.zeros(self.n_locations)
-        self.terminals[terminal_state_id] = 1
+        self.terminals[terminal_state] = 1
         self.terminal_states, = np.where(self.terminals)
 
         self.transition_graph = self.h5_file['graph'][()]
@@ -76,7 +76,7 @@ class THORDiscreteEnvironment(Environment):
 
 
         # LAST instruction
-        self.s_target = self._tiled_state(self.terminal_state_id)
+        self.s_target = self._tiled_state(self.terminal_state)
 
 
     def reset(self):
@@ -175,4 +175,4 @@ class THORDiscreteEnvironment(Environment):
 
     @property
     def shortest_path_distance_start(self):
-        return self.shortest_path_distances[self.start_state_id][self.terminal_state_id]
+        return self.shortest_path_distances[self.start_state_id][self.terminal_state]

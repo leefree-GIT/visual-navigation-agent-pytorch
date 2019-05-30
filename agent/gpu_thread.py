@@ -60,9 +60,11 @@ class GPUThread(mp.Process):
     def run(self):
         # self._preprocess_obs(self.scenes, self.h5_file_path)
         self.model = self.model.to(self.device)
+
+        self.tensor = torch.empty((2048,1)).cpu()
         print("GPUThread starting")
         while True and not self.exit.is_set():
-            self.evt.wait()
+            # self.evt.wait()
             for ind, i_q in enumerate(self.i_queues):
                 try:
                     frame = i_q.get(False)
