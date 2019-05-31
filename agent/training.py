@@ -241,50 +241,25 @@ class Training:
                 it = it + 1
                 branches.append((scene, target))
 
-
-        # If True use resnet to extract feature
-        # If False use precomputed one
-        use_resnet = self.config['resnet']
-        print(f"Resnet {use_resnet}")
-
-
         def _createThread(id, task, i_queue, o_queue, evt, summary_queue):
             (scene, target) = task
             net = nn.Sequential(self.shared_network, self.scene_networks[scene])
             net.share_memory()
-
-            if use_resnet:
-                return TrainingThread(
-                    id = id,
-                    optimizer = self.optimizer,
-                    network = net,
-                    scene = scene,
-                    saver = self.saver,
-                    max_t = self.max_t,
-                    terminal_state = target,
-                    device = self.device,
-                    input_queue = i_queue,
-                    output_queue = o_queue,
-                    evt = evt,
-                    summary_queue = summary_queue,
-                    use_resnet = use_resnet,
-                    **self.config)
-            else:
-                return TrainingThread(
-                    id = id,
-                    optimizer = self.optimizer,
-                    network = net,
-                    scene = scene,
-                    saver = self.saver,
-                    max_t = self.max_t,
-                    terminal_state = target,
-                    device = self.device,
-                    input_queue = i_queue,
-                    output_queue = o_queue,
-                    evt = evt,
-                    summary_queue = summary_queue,
-                    use_resnet = use_resnet,
-                    **self.config)
+            return TrainingThread(
+                id = id,
+                optimizer = self.optimizer,
+                network = net,
+                scene = scene,
+                saver = self.saver,
+                max_t = self.max_t,
+                terminal_state = target,
+                device = self.device,
+                input_queue = i_queue,
+                output_queue = o_queue,
+                evt = evt,
+                summary_queue = summary_queue,
+                **self.config)
+           
 
         # Retrieve number of task
         num_scene_task =  len(branches)
@@ -312,9 +287,7 @@ class Training:
         self.summary = SummaryThread(summary_queue)
 
         # Create GPUThread to handle feature computation
-        if use_resnet:
-            h5_file_path = self.config.get('h5_file_path')
-            self.gpu = GPUThread(resnet_custom, self.device, input_queues, output_queues, list(TASK_LIST.keys()), h5_file_path, evt)
+        self.gpu = GPUThread(resnet_custom, self.device, input_queues, output_queues, list(TASK_LIST.keys()), evt)
 
         # Create at least 1 thread per task
         for i in range(self.num_thread):
@@ -329,8 +302,7 @@ class Training:
             self.summary.start()
 
             # Start the gpu thread
-            if use_resnet:
-                self.gpu.start()
+            self.gpu.start()
 
             # Then start the agents threads
             for thread in self.threads:
@@ -341,9 +313,8 @@ class Training:
                 thread.join()
             
             # Wait for GPUThread
-            if use_resnet:
-                self.gpu.stop()
-                self.gpu.join()
+            self.gpu.stop()
+            self.gpu.join()
 
             # Wait for logger
             self.summary.stop()
@@ -358,9 +329,9 @@ class Training:
             for thread in self.threads:
                 thread.stop()
                 thread.join()
-            if use_resnet:
-                self.gpu.stop()
-                self.gpu.join()
+                
+            self.gpu.stop()
+            self.gpu.join()
             
             self.summary.stop()
             self.summary.join()

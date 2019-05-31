@@ -14,7 +14,6 @@ class GPUThread(mp.Process):
                 input_queues : mp.Queue,
                 output_queues : mp.Queue,
                 scenes,
-                h5_file_path,
                 evt):
         super(GPUThread, self).__init__()
         self.model = model
@@ -23,7 +22,6 @@ class GPUThread(mp.Process):
         self.o_queues = output_queues
         self.exit = mp.Event()
         self.scenes = scenes 
-        self.h5_file_path = h5_file_path
         self.evt = evt
         
     def run(self):
