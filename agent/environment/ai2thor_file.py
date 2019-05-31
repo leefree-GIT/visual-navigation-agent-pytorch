@@ -17,17 +17,27 @@ class THORDiscreteEnvironment(Environment):
     def __init__(self, 
             scene_name = 'bedroom_04',
             resnet_trained = None,
-            random_start = True,
             n_feat_per_location = 1,
             history_length : int = 4,
-            screen_width = 224,
-            screen_height = 224,
             terminal_state_id = 0,
             h5_file_path = None,
             input_queue: mp.Queue = None,
             output_queue: mp.Queue = None,
             evt: mp.Event = None,
             **kwargs):
+        """THORDiscreteEnvironment constructor, it represent a world where an agent evolves
+        
+        Keyword Arguments:
+            scene_name {str} -- Name of the current world (default: {'bedroom_04'})
+            resnet_trained {[type]} -- Resnet network used to compute features (default: {None})
+            n_feat_per_location {int} -- Number of feature by position in the world (default: {1})
+            history_length {int} -- Number of frame to stack so the network take in account previous observations (default: {4})
+            terminal_state_id {int} -- Terminal position represented by an ID (default: {0})
+            h5_file_path {[type]} -- Path to precomputed world (default: {None})
+            input_queue {mp.Queue} -- Input queue to receive resnet features (default: {None})
+            output_queue {mp.Queue} -- Output queue to ask for resnet features (default: {None})
+            evt {mp.Event} -- Event to tell the GPUThread that there are new data to compute (default: {None})
+        """
         super(THORDiscreteEnvironment, self).__init__()
 
 

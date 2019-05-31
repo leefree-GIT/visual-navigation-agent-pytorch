@@ -42,6 +42,8 @@ TrainingSample = namedtuple('TrainingSample', ('state', 'policy', 'value', 'acti
 
 
 class TrainingThread(mp.Process):
+    """This thread is an agent, it will explore the world and backpropagate gradient
+    """
     def __init__(self,
             id : int,
             network : torch.nn.Module,
@@ -53,6 +55,19 @@ class TrainingThread(mp.Process):
             evt,
             summary_queue: mp.Queue,
             **kwargs):
+        """TrainingThread constructor
+        
+        Arguments:
+            id {int} -- UID of the thread
+            network {torch.nn.Module} -- Master network shared by all TrainingThread
+            saver {[type]} -- saver utils to to save checkpoint
+            optimizer {[type]} -- Optimizer to use
+            scene {str} -- Name of the current world
+            input_queue {mp.Queue} -- Input queue to receive resnet features
+            output_queue {mp.Queue} -- Output queue to ask for resnet features
+            evt {[type]} -- Event to tell the GPUThread that there are new data to compute
+            summary_queue {mp.Queue} -- Queue to pass scalar to tensorboard logger
+        """
 
         super(TrainingThread, self).__init__()
 
@@ -115,8 +130,6 @@ class TrainingThread(mp.Process):
         self._reset_episode()
         self._sync_network()
 
-        # self.writer = SummaryWriter("runs/log_output/run", filename_suffix='id_' + str(self.id) + '_')
-
     def _reset_episode(self):
         self.episode_reward = 0
         self.episode_length = 0
@@ -134,6 +147,8 @@ class TrainingThread(mp.Process):
 
         # Plays out one game to end or max_t
         for t in range(self.max_t):
+
+            # Resnet feature are extracted or computed here
             state = { 
                 "current": self.env.render('resnet_features'),
                 "goal": self.env.render_target('resnet_features'),
@@ -199,14 +214,12 @@ class TrainingThread(mp.Process):
                 
                 scene_log = self.scene + '-' + str(self.init_args.get('terminal_state_id', -1))
                 step = self.optimizer.get_global_step() * self.max_t
+
+                # Send info to logger thread
                 self.summary_queue.put((scene_log + '/episode_length', self.episode_length, step))
                 self.summary_queue.put((scene_log + '/max_q', float(self.episode_max_q), step))
                 self.summary_queue.put((scene_log + '/reward', float(self.episode_reward), step))
                 self.summary_queue.put((scene_log + '/learning_rate', float(self.optimizer.scheduler.get_lr()[0]), step))
-                # self.writer.add_scalar(scene_log + '/episode_length', self.episode_length, step)
-                # self.writer.add_scalar(scene_log + '/max_q', float(self.episode_max_q), step)
-                # self.writer.add_scalar(scene_log + '/reward', float(self.episode_reward), step)
-                # self.writer.add_scalar(scene_log + '/learning_rate', float(self.optimizer.scheduler.get_lr()[0]), step)
 
                 terminal_end = True
                 self._reset_episode()
