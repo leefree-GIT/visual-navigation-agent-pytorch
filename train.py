@@ -26,11 +26,13 @@ if __name__ == '__main__':
         help='epsilon parameter for RMSProp optimizer (default: 0.1)')
     parser.add_argument('--num_thread', type = int, default=20, help='number of total threads')
     parser.add_argument('--resnet', action='store_true')
+    parser.add_argument('--cuda', type = str, default='0')
 
 
     args = vars(parser.parse_args())
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:" + args['cuda'] if torch.cuda.is_available() else "cpu")
+    print(device)
     # torch.backends.cudnn.enabled = False
     # device = torch.device('cpu')
 
