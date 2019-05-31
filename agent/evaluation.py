@@ -21,7 +21,7 @@ from agent.gpu_thread import GPUThread
 from agent.constants import TASK_LIST
 from agent.constants import ACTION_SPACE_SIZE
 from agent.constants import NUM_EVAL_EPISODES
-from agent.constants import VERBOSE, USE_RESNET
+from agent.constants import VERBOSE
 import time
 
 
@@ -63,8 +63,8 @@ class Evaluation:
     def run(self):
         scene_stats = dict()
         resultData = []
-
-        if USE_RESNET:
+        use_resnet = self.config.get("resnet")
+        if use_resnet:
             mp.set_start_method('spawn')
             device = torch.device("cuda")
             # Download pretrained resnet
@@ -86,7 +86,7 @@ class Evaluation:
             scene_net = self.scene_nets[scene_scope]
             scene_stats[scene_scope] = list()
             for task_scope in items:
-                if USE_RESNET:
+                if use_resnet:
                     env = THORDiscreteEnvironment(
                         scene_name=scene_scope,
                         input_queue=output_queue,
@@ -146,7 +146,7 @@ class Evaluation:
         
         if 'csv_file' in self.config and self.config['csv_file'] is not None:
             export_to_csv(resultData, self.config['csv_file'])
-        if USE_RESNET:
+        if use_resnet:
             gpu_thread.stop()
             gpu_thread.join()
 
