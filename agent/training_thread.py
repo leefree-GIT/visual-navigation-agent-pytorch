@@ -51,6 +51,7 @@ class TrainingThread(mp.Process):
             input_queue: mp.Queue,
             output_queue: mp.Queue,
             evt,
+            summary_queue: mp.Queue,
             **kwargs):
 
         super(TrainingThread, self).__init__()
@@ -73,6 +74,8 @@ class TrainingThread(mp.Process):
         self.i_queue = input_queue
         self.o_queue = output_queue
         self.evt = evt
+
+        self.summary_queue = summary_queue
 
     def _sync_network(self):
         state_dict = self.master_network.state_dict()
@@ -112,8 +115,7 @@ class TrainingThread(mp.Process):
         self._reset_episode()
         self._sync_network()
 
-        self.writer = SummaryWriter("runs/log_output",filename_suffix='id_' + str(self.id) + '_')
-
+        # self.writer = SummaryWriter("runs/log_output/run", filename_suffix='id_' + str(self.id) + '_')
 
     def _reset_episode(self):
         self.episode_reward = 0
@@ -197,10 +199,14 @@ class TrainingThread(mp.Process):
                 
                 scene_log = self.scene + '-' + str(self.init_args.get('terminal_state_id', -1))
                 step = self.optimizer.get_global_step() * self.max_t
-                self.writer.add_scalar(scene_log + '/episode_length', self.episode_length, step)
-                self.writer.add_scalar(scene_log + '/max_q', float(self.episode_max_q), step)
-                self.writer.add_scalar(scene_log + '/reward', float(self.episode_reward), step)
-                self.writer.add_scalar(scene_log + '/learning_rate', float(self.optimizer.scheduler.get_lr()[0]), step)
+                self.summary_queue.put((scene_log + '/episode_length', self.episode_length, step))
+                self.summary_queue.put((scene_log + '/max_q', float(self.episode_max_q), step))
+                self.summary_queue.put((scene_log + '/reward', float(self.episode_reward), step))
+                self.summary_queue.put((scene_log + '/learning_rate', float(self.optimizer.scheduler.get_lr()[0]), step))
+                # self.writer.add_scalar(scene_log + '/episode_length', self.episode_length, step)
+                # self.writer.add_scalar(scene_log + '/max_q', float(self.episode_max_q), step)
+                # self.writer.add_scalar(scene_log + '/reward', float(self.episode_reward), step)
+                # self.writer.add_scalar(scene_log + '/learning_rate', float(self.optimizer.scheduler.get_lr()[0]), step)
 
                 terminal_end = True
                 self._reset_episode()
@@ -280,6 +286,7 @@ class TrainingThread(mp.Process):
                 self.saver.after_optimization()                
                 # pass
             self.stop()
+            # self.writer.close()
             # compare_models(self.resnet_model.resnet, self.resnet_network)
         except Exception as e:
             print(e)
@@ -289,6 +296,5 @@ class TrainingThread(mp.Process):
 
     def stop(self):
         print("Stop initiated")
-        self.writer.close()
         self.evt.set()
         self.exit.set()

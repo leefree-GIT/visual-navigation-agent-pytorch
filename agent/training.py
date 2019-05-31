@@ -1,6 +1,7 @@
 from agent.network import SharedNetwork, SceneSpecificNetwork, SharedResnet, compare_models
 from agent.training_thread import TrainingThread
 from agent.gpu_thread import GPUThread
+from agent.summary_thread import SummaryThread
 from agent.optim import SharedRMSprop
 from typing import Collection, List
 import torch.nn as nn
@@ -240,7 +241,7 @@ class Training:
         use_resnet = USE_RESNET
 
 
-        def _createThread(id, task, i_queue, o_queue, evt):
+        def _createThread(id, task, i_queue, o_queue, evt, summary_queue):
             (scene, target) = task
             net = nn.Sequential(self.shared_network, self.scene_networks[scene])
             net.share_memory()
@@ -258,6 +259,7 @@ class Training:
                     input_queue = i_queue,
                     output_queue = o_queue,
                     evt = evt,
+                    summary_queue = summary_queue,
                     **self.config)
             else:
                 return TrainingThread(
@@ -272,6 +274,7 @@ class Training:
                     input_queue = i_queue,
                     output_queue = o_queue,
                     evt = evt,
+                    summary_queue = summary_queue,
                     **self.config)
 
         num_scene_task =  len(branches)
@@ -286,6 +289,7 @@ class Training:
 
         input_queues = []
         output_queues = []
+        summary_queue = mp.Queue()
         evt = mp.Event()
         for i in range(self.num_thread):
             input_queue = mp.Queue()
@@ -293,30 +297,48 @@ class Training:
             input_queues.append(input_queue)
             output_queues.append(output_queue)
 
+        # Create a summary thread to log
+        self.summary = SummaryThread(summary_queue)
         if use_resnet:
             h5_file_path = self.config.get('h5_file_path')
-            self.threads.append(GPUThread(resnet_custom, self.device, input_queues, output_queues, list(TASK_LIST.keys()), h5_file_path, evt))
+            self.gpu = GPUThread(resnet_custom, self.device, input_queues, output_queues, list(TASK_LIST.keys()), h5_file_path, evt)
 
         for i in range(self.num_thread):
-            self.threads.append(_createThread(i, branches[i%num_scene_task], output_queues[i], input_queues[i], evt))
+            self.threads.append(_createThread(i, branches[i%num_scene_task], output_queues[i], input_queues[i], evt, summary_queue))
         
 
         
         # self.threads = [_createThread(i, task) for i, task in enumerate(branches)]
         print(f"Running for {TOTAL_PROCESSED_FRAMES}")
         try:
+            self.summary.start()
+            if use_resnet:
+                self.gpu.start()
             for thread in self.threads:
                 thread.start()
 
             for thread in self.threads:
                 thread.join()
+            
+            if use_resnet:
+                self.gpu.stop()
+                self.gpu.join()
+            self.summary.stop()
+            self.summary.join()
             self.saver.save()
         except KeyboardInterrupt:
             # we will save the training
             print('Saving training session')
             self.saver.save()
+            
             for thread in self.threads:
                 thread.stop()
+            if use_resnet:
+                self.gpu.stop()
+            
+            self.summary.stop()
+            self.summary.join()
+
             compare_models(resnet_trained, resnet_custom.resnet)
         
 
