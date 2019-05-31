@@ -92,8 +92,8 @@ class TrainingThread(mp.Process):
 
     def _initialize_thread(self):
         h5_file_path = self.init_args.get('h5_file_path')
-        # self.logger = logging.getLogger('agent')
-        # self.logger.setLevel(logging.INFO)
+        self.logger = logging.getLogger('agent')
+        self.logger.setLevel(logging.INFO)
         self.init_args['h5_file_path'] = lambda scene: h5_file_path.replace('{scene}', scene)
         
         self.env = THORDiscreteEnvironment(self.scene,
@@ -283,13 +283,12 @@ class TrainingThread(mp.Process):
                     print(f'Global Step {self.optimizer.get_global_step()}')
 
                 # Trigger save or other
-                self.saver.after_optimization()                
+                self.saver.after_optimization()
                 # pass
             self.stop()
             # self.writer.close()
             # compare_models(self.resnet_model.resnet, self.resnet_network)
         except Exception as e:
-            print(e)
             # TODO: add logging
             #self.logger.error(e.msg)
             raise e

@@ -1,4 +1,5 @@
 import torch.multiprocessing as mp
+from queue import Empty
 
 from tensorboardX import SummaryWriter
 class SummaryThread(mp.Process):
@@ -10,10 +11,14 @@ class SummaryThread(mp.Process):
 
     def run(self):
         print("SummaryThread starting")
-        self.writer = SummaryWriter("runs/log_output/run")
+        self.writer = SummaryWriter()
         while True and not self.exit.is_set():
-            name, scalar, step = self.i_queue.get()
-            self.writer.add_scalar(name, scalar, step)
+            try:
+                name, scalar, step = self.i_queue.get(timeout=1)
+                self.writer.add_scalar(name, scalar, step)
+            except Empty:
+                pass
+        print("Exiting SummaryThread")
     def stop(self):
-        print("Stop initiated for GPUThread")
+        print("Stop initiated for SummaryThread")
         self.exit.set()

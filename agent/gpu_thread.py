@@ -84,3 +84,4 @@ class GPUThread(mp.Process):
     def stop(self):
         print("Stop initiated for GPUThread")
         self.exit.set()
+        self.evt.set()

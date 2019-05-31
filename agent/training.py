@@ -319,12 +319,15 @@ class Training:
 
             for thread in self.threads:
                 thread.join()
+            print("All worker joined")
             
             if use_resnet:
                 self.gpu.stop()
                 self.gpu.join()
+            print("GPU joined")
             self.summary.stop()
             self.summary.join()
+            print("Summary joined")
             self.saver.save()
         except KeyboardInterrupt:
             # we will save the training
