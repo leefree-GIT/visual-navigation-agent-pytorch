@@ -20,7 +20,7 @@ from contextlib import suppress
 import re
 from agent.constants import TOTAL_PROCESSED_FRAMES, EARLY_STOP
 from agent.constants import TASK_LIST
-from agent.constants import SAVING_PERIOD, MAX_STEP, USE_RESNET
+from agent.constants import SAVING_PERIOD, MAX_STEP
 
 from agent.resnet import resnet50
 
@@ -238,7 +238,8 @@ class Training:
 
         # If True use resnet to extract feature
         # If False use precomputed one
-        use_resnet = USE_RESNET
+        use_resnet = self.config['resnet']
+        print(f"Resnet {use_resnet}")
 
 
         def _createThread(id, task, i_queue, o_queue, evt, summary_queue):
@@ -260,6 +261,7 @@ class Training:
                     output_queue = o_queue,
                     evt = evt,
                     summary_queue = summary_queue,
+                    use_resnet = use_resnet,
                     **self.config)
             else:
                 return TrainingThread(
@@ -275,6 +277,7 @@ class Training:
                     output_queue = o_queue,
                     evt = evt,
                     summary_queue = summary_queue,
+                    use_resnet = use_resnet,
                     **self.config)
 
         # Retrieve number of task
@@ -348,8 +351,10 @@ class Training:
             
             for thread in self.threads:
                 thread.stop()
+                thread.join()
             if use_resnet:
                 self.gpu.stop()
+                self.gpu.join()
             
             self.summary.stop()
             self.summary.join()

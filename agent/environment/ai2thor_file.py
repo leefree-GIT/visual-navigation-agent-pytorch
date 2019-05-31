@@ -7,7 +7,6 @@ import random
 import skimage.io
 from skimage.transform import resize
 from agent.environment.environment import Environment
-from agent.constants import USE_RESNET
 import torch.multiprocessing as mp
 from torchvision import transforms
 import torchvision.transforms.functional as F
@@ -24,6 +23,7 @@ class THORDiscreteEnvironment(Environment):
             input_queue: mp.Queue = None,
             output_queue: mp.Queue = None,
             evt: mp.Event = None,
+            use_resnet = True,
             **kwargs):
         """THORDiscreteEnvironment constructor, it represent a world where an agent evolves
         
@@ -49,7 +49,7 @@ class THORDiscreteEnvironment(Environment):
 
         self.scene = scene_name
             
-        self.use_resnet = USE_RESNET
+        self.use_resnet = use_resnet
 
         self.terminal_state_id = terminal_state_id
 

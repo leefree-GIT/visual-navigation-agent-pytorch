@@ -15,10 +15,8 @@ FRAME_PER_AGENT = 300000
 TOTAL_PROCESSED_FRAMES = FRAME_PER_AGENT * MAX_STEP
 
 # Early stop can be triggered here
-EARLY_STOP = 10000
+EARLY_STOP = TOTAL_PROCESSED_FRAMES
 
-# Use resnet to compute feature from observation (frame)
-USE_RESNET = True
 
 # EARLY_STOP = TOTAL_PROCESSED_FRAMES
 # TOTAL_PROCESSED_FRAMES = 10 * 10**6 # 10 million frames
