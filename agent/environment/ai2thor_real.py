@@ -157,6 +157,9 @@ class THORDiscreteEnvironment(Environment):
     def get_state(self):
         return self.state
 
+    def stop(self):
+        self.controller.stop()
+
 def make(name):
     if name == "unity":
         return THORDiscreteEnvironment()

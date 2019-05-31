@@ -42,6 +42,8 @@ TrainingSample = namedtuple('TrainingSample', ('state', 'policy', 'value', 'acti
 
 
 class TrainingThread(mp.Process):
+    """This thread is an agent, it will explore the world and backpropagate gradient
+    """
     def __init__(self,
             id : int,
             network : torch.nn.Module,
@@ -51,7 +53,21 @@ class TrainingThread(mp.Process):
             input_queue: mp.Queue,
             output_queue: mp.Queue,
             evt,
+            summary_queue: mp.Queue,
             **kwargs):
+        """TrainingThread constructor
+        
+        Arguments:
+            id {int} -- UID of the thread
+            network {torch.nn.Module} -- Master network shared by all TrainingThread
+            saver {[type]} -- saver utils to to save checkpoint
+            optimizer {[type]} -- Optimizer to use
+            scene {str} -- Name of the current world
+            input_queue {mp.Queue} -- Input queue to receive resnet features
+            output_queue {mp.Queue} -- Output queue to ask for resnet features
+            evt {[type]} -- Event to tell the GPUThread that there are new data to compute
+            summary_queue {mp.Queue} -- Queue to pass scalar to tensorboard logger
+        """
 
         super(TrainingThread, self).__init__()
 
@@ -74,6 +90,8 @@ class TrainingThread(mp.Process):
         self.o_queue = output_queue
         self.evt = evt
 
+        self.summary_queue = summary_queue
+
     def _sync_network(self):
         state_dict = self.master_network.state_dict()
         self.policy_network.load_state_dict(state_dict)
@@ -89,8 +107,8 @@ class TrainingThread(mp.Process):
 
     def _initialize_thread(self):
         h5_file_path = self.init_args.get('h5_file_path')
-        # self.logger = logging.getLogger('agent')
-        # self.logger.setLevel(logging.INFO)
+        self.logger = logging.getLogger('agent')
+        self.logger.setLevel(logging.INFO)
         self.init_args['h5_file_path'] = lambda scene: h5_file_path.replace('{scene}', scene)
         
         self.env = THORDiscreteEnvironment(self.scene,
@@ -112,9 +130,6 @@ class TrainingThread(mp.Process):
         self._reset_episode()
         self._sync_network()
 
-        self.writer = SummaryWriter("runs/log_output",filename_suffix='id_' + str(self.id) + '_')
-
-
     def _reset_episode(self):
         self.episode_reward = 0
         self.episode_length = 0
@@ -132,6 +147,8 @@ class TrainingThread(mp.Process):
 
         # Plays out one game to end or max_t
         for t in range(self.max_t):
+
+            # Resnet feature are extracted or computed here
             state = { 
                 "current": self.env.render('resnet_features'),
                 "goal": self.env.render_target('resnet_features'),
@@ -191,16 +208,18 @@ class TrainingThread(mp.Process):
 
                 print('playout finished')
                 print(f'episode length: {self.episode_length}')
-                print(f'episode shortest length: {self.env.shortest_path_distance_start}')
+                # print(f'episode shortest length: {self.env.shortest_path_distance_start}')
                 print(f'episode reward: {self.episode_reward}')
                 print(f'episode max_q: {self.episode_max_q}')
                 
-                scene_log = self.scene + '-' + self.env.terminal_state['id']
+                scene_log = self.scene + '-' + str(self.id)
                 step = self.optimizer.get_global_step() * self.max_t
-                self.writer.add_scalar(scene_log + '/episode_length', self.episode_length, step)
-                self.writer.add_scalar(scene_log + '/max_q', float(self.episode_max_q), step)
-                self.writer.add_scalar(scene_log + '/reward', float(self.episode_reward), step)
-                self.writer.add_scalar(scene_log + '/learning_rate', float(self.optimizer.scheduler.get_lr()[0]), step)
+
+                # Send info to logger thread
+                self.summary_queue.put((scene_log + '/episode_length', self.episode_length, step))
+                self.summary_queue.put((scene_log + '/max_q', float(self.episode_max_q), step))
+                self.summary_queue.put((scene_log + '/reward', float(self.episode_reward), step))
+                self.summary_queue.put((scene_log + '/learning_rate', float(self.optimizer.scheduler.get_lr()[0]), step))
 
                 terminal_end = True
                 self._reset_episode()
@@ -277,13 +296,12 @@ class TrainingThread(mp.Process):
                     print(f'Global Step {self.optimizer.get_global_step()}')
 
                 # Trigger save or other
-                self.saver.after_optimization()                
+                self.saver.after_optimization()
                 # pass
             self.stop()
-            self.writer.close()
+            self.env.stop()
             # compare_models(self.resnet_model.resnet, self.resnet_network)
         except Exception as e:
-            print(e)
             # TODO: add logging
             #self.logger.error(e.msg)
             raise e

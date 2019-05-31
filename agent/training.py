@@ -1,6 +1,7 @@
 from agent.network import SharedNetwork, SceneSpecificNetwork, SharedResnet, compare_models
 from agent.training_thread import TrainingThread
 from agent.gpu_thread import GPUThread
+from agent.summary_thread import SummaryThread
 from agent.optim import SharedRMSprop
 from typing import Collection, List
 import torch.nn as nn
@@ -17,7 +18,7 @@ import torchvision.transforms.functional as F
 import numpy as np
 from contextlib import suppress
 import re
-from agent.constants import TOTAL_PROCESSED_FRAMES
+from agent.constants import TOTAL_PROCESSED_FRAMES, EARLY_STOP
 from agent.constants import TASK_LIST
 from agent.constants import SAVING_PERIOD, MAX_STEP, USE_RESNET
 
@@ -241,12 +242,12 @@ class Training:
                 branches.append((scene, target))
 
 
-        # Preprocess obs
-
+        # If True use resnet to extract feature
+        # If False use precomputed one
         use_resnet = USE_RESNET
 
 
-        def _createThread(id, task, i_queue, o_queue, evt):
+        def _createThread(id, task, i_queue, o_queue, evt, summary_queue):
             (scene, target) = task
             net = nn.Sequential(self.shared_network, self.scene_networks[scene])
             net.share_memory()
@@ -264,6 +265,7 @@ class Training:
                     input_queue = i_queue,
                     output_queue = o_queue,
                     evt = evt,
+                    summary_queue = summary_queue,
                     **self.config)
             else:
                 return TrainingThread(
@@ -278,8 +280,10 @@ class Training:
                     input_queue = i_queue,
                     output_queue = o_queue,
                     evt = evt,
+                    summary_queue = summary_queue,
                     **self.config)
 
+        # Retrieve number of task
         num_scene_task =  len(branches)
 
 
@@ -290,8 +294,10 @@ class Training:
         self.threads = []
 
 
+        # Queues will be used to pass feature to GPUThread, one to send, one to receive per Process
         input_queues = []
         output_queues = []
+        summary_queue = mp.Queue()
         evt = mp.Event()
         for i in range(self.num_thread):
             input_queue = mp.Queue()
@@ -299,28 +305,48 @@ class Training:
             input_queues.append(input_queue)
             output_queues.append(output_queue)
 
+        # Create a summary thread to log
+        self.summary = SummaryThread(summary_queue)
+
+        # Create GPUThread to handle feature computation
         if use_resnet:
             h5_file_path = self.config.get('h5_file_path')
             self.gpu = GPUThread(resnet_custom, self.device, input_queues, output_queues, list(TASK_LIST.keys()), h5_file_path, evt)
 
+        # Create at least 1 thread per task
         for i in range(self.num_thread):
-            self.threads.append(_createThread(i, branches[i%num_scene_task], output_queues[i], input_queues[i], evt))
+            self.threads.append(_createThread(i, branches[i%num_scene_task], output_queues[i], input_queues[i], evt, summary_queue))
         
 
         
         # self.threads = [_createThread(i, task) for i, task in enumerate(branches)]
-        print(f"Running for {TOTAL_PROCESSED_FRAMES}")
+        print(f"Running for {EARLY_STOP}")
         try:
+            # Start the logger thread
+            self.summary.start()
+
+            # Start the gpu thread
             if use_resnet:
                 self.gpu.start()
+
+            # Then start the agents threads
             for thread in self.threads:
                 thread.start()
 
+            # Wait for agent
             for thread in self.threads:
                 thread.join()
+            
+            # Wait for GPUThread
             if use_resnet:
                 self.gpu.stop()
                 self.gpu.join()
+
+            # Wait for logger
+            self.summary.stop()
+            self.summary.join()
+
+            # Save last checkpoint
             self.saver.save()
         except KeyboardInterrupt:
             # we will save the training
@@ -328,6 +354,12 @@ class Training:
             self.saver.save()
             for thread in self.threads:
                 thread.stop()
+            if use_resnet:
+                self.gpu.stop()
+            
+            self.summary.stop()
+            self.summary.join()
+
             compare_models(resnet_trained, resnet_custom.resnet)
         
 
