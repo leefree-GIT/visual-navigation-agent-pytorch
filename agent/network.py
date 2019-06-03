@@ -42,7 +42,7 @@ class SharedResnet(nn.Module):
         self.resnet_layer = nn.Sequential(*(list(self.resnet_model.children())[:-1]))
         for p in self.resnet_layer.parameters():
             p.requires_grad = False
-        self.resnet_layer.eval()
+        self.resnet_layer = self.resnet_layer.eval()
 
         compare_models(resnet, self.resnet_layer)
 

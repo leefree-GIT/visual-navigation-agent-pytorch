@@ -17,7 +17,7 @@ class GPUThread(mp.Process):
                 h5_file_path,
                 evt):
         super(GPUThread, self).__init__()
-        self.model = model
+        self.model = model.eval()
         self.model = self.model.to(device)
         self.device = device
         self.i_queues = input_queues
@@ -52,10 +52,7 @@ class GPUThread(mp.Process):
                     resized_tens = torch.from_numpy(obs)
                     resized_tens = transform(F.to_pil_image(resized_tens))
                     resized_tens = resized_tens.unsqueeze(0)
-                    resized_tens = resized_tens.share_memory_()
                     resized_tens_cat = torch.cat((resized_tens_cat, resized_tens), 0)
-                print(resized_tens_cat.size())
-                resized_tens_cat = resized_tens_cat.share_memory_()
                 resized_tens_cat = resized_tens_cat.to(device)
 
                 logging.info(f"Tensor for scene {scene} created")
