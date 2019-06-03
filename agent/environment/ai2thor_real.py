@@ -151,7 +151,7 @@ class THORDiscreteEnvironment(Environment):
 
     @property
     def is_terminal(self):
-        return self.terminal or self.time >= 5e3
+        return self.terminal or self.time >= 10e3
 
     @property
     def get_state(self):
