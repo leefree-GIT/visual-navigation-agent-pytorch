@@ -28,6 +28,10 @@ if __name__ == '__main__':
     parser.add_argument('--resnet', action='store_true')
     parser.add_argument('--cuda', type = str, default='0')
 
+    torch.manual_seed(0)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
 
     args = vars(parser.parse_args())
 

@@ -22,7 +22,7 @@ from agent.constants import TOTAL_PROCESSED_FRAMES, EARLY_STOP
 from agent.constants import TASK_LIST
 from agent.constants import SAVING_PERIOD, MAX_STEP
 
-from agent.resnet import resnet50
+from torchvision.models.resnet import resnet50
 
 from tensorboardX import SummaryWriter
 import logging
@@ -222,16 +222,6 @@ class Training:
         self.logger.info("Training started")
         self.print_parameters()
 
-        # Download pretrained resnet
-        resnet_trained = resnet50(pretrained=True)
-        resnet_trained.to(self.device)
-        resnet_custom = SharedResnet()
-        resnet_custom.load_resnet_pretrained(resnet_trained.state_dict())
-        resnet_custom.to(self.device)
-        resnet_custom.share_memory()
-        resnet_custom.resnet.share_memory()
-        compare_models(resnet_custom.resnet, resnet_trained)
-
         # Prepare threads
         branches = [(scene, int(target)) for scene in TASK_LIST.keys() for target in TASK_LIST.get(scene)]
 
@@ -304,6 +294,12 @@ class Training:
         # Create a summary thread to log
         self.summary = SummaryThread(summary_queue)
 
+
+
+        # Download pretrained resnet
+        resnet_trained = resnet50(pretrained=True)
+        resnet_custom = SharedResnet(resnet_trained)
+
         # Create GPUThread to handle feature computation
         if use_resnet:
             h5_file_path = self.config.get('h5_file_path')
@@ -359,7 +355,7 @@ class Training:
             self.summary.stop()
             self.summary.join()
 
-            compare_models(resnet_trained, resnet_custom.resnet)
+            compare_models(resnet_trained, resnet_custom.resnet_layer)
         
 
     def _init_logger(self):

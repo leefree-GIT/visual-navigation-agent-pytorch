@@ -1,7 +1,6 @@
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
-from agent.resnet import resnet50
 import numpy as np
 
 def compare_models(model_1, model_2):
@@ -36,10 +35,16 @@ class DQN(nn.Module):
         return self.head(x.view(x.size(0), -1))
 
 class SharedResnet(nn.Module):
-    def __init__(self):
+    def __init__(self, resnet):
         super(SharedResnet, self).__init__()
 
-        self.resnet = resnet50()
+        self.resnet_model = resnet
+        self.resnet_layer = nn.Sequential(*(list(self.resnet_model.children())[:-1]))
+        for p in self.resnet_layer.parameters():
+            p.requires_grad = False
+        self.resnet_layer.eval()
+
+        compare_models(resnet, self.resnet_layer)
 
     def forward(self, inp):
         with torch.no_grad():
@@ -50,7 +55,7 @@ class SharedResnet(nn.Module):
             # (obs_past_3, obs_past_2, obs_past_1, obs_now, target,) = new_inp
             (obs,) = new_inp
 
-            x = self.resnet(obs)
+            x = self.resnet_layer(obs)
 
             return x
 
