@@ -20,6 +20,21 @@ services:
       - OMP_NUM_THREADS=1
     depends_on:
       - agent
+
+  train_resnet:
+    ipc: host
+    runtime: nvidia
+    command: "python -u /app/train.py --num_thread 5 --resnet --cuda 0"
+    image: kulhanek/visual-navigation-agent-pytorch
+    volumes:
+      - ./agentmodel:/model
+      - ./runs:/app/runs
+    environment:
+      - PYTHONUNBUFFERED=1 
+      - OMP_NUM_THREADS=1
+    depends_on:
+      - agent
+
   eval:
     ipc: host
     runtime: nvidia
@@ -39,6 +54,7 @@ services:
     image: kulhanek/visual-navigation-agent-pytorch
     volumes:
       - ./agentmodel:/model
+      - ./runs:/app/runs
     environment:
       - PYTHONUNBUFFERED=1 
       - OMP_NUM_THREADS=1
@@ -53,6 +69,8 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix
     depends_on:
       - agent
+    volumes:
+      - ./agentmodel:/model
     environment:
       - DISPLAY=${DISPLAY}
     image: kulhanek/visual-navigation-agent-pytorch
