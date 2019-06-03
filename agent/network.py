@@ -48,14 +48,8 @@ class SharedResnet(nn.Module):
 
     def forward(self, inp):
         with torch.no_grad():
-            new_inp = ()
-            for net_inp in inp:
-                new_inp = new_inp + (net_inp,)
 
-            # (obs_past_3, obs_past_2, obs_past_1, obs_now, target,) = new_inp
-            (obs,) = new_inp
-
-            x = self.resnet_layer(obs)
+            x = self.resnet_layer(inp)
 
             return x
 

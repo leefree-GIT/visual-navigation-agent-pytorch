@@ -18,6 +18,7 @@ class GPUThread(mp.Process):
                 evt):
         super(GPUThread, self).__init__()
         self.model = model
+        self.model = self.model.to(device)
         self.device = device
         self.i_queues = input_queues
         self.o_queues = output_queues
@@ -27,7 +28,7 @@ class GPUThread(mp.Process):
         self.evt = evt
 
     def _preprocess_obs(self, scenes, h5_file_path):
-        device = torch.device('cuda')
+        device = self.device
         h5_path = lambda scene: h5_file_path.replace('{scene}', scene)
         self.d = dict()
         transform = transforms.Compose([
@@ -71,10 +72,10 @@ class GPUThread(mp.Process):
                 try:
                     scene, state = i_q.get(False)
                     res_obs_scene = self.d[scene][state]
-                    tensor = res_obs_scene.to(self.device)
-                    tensor = tensor.unsqueeze(0)
-                    output_tensor = self.model((tensor,))
-                    output_tensor = output_tensor.permute(1,0)
+                    tensor = res_obs_scene.unsqueeze(0)
+                    output_tensor = self.model(tensor)
+                    output_tensor = output_tensor.view(-1)
+                    output_tensor = output_tensor.unsqueeze(1)
                     output_tensor = output_tensor.cpu()
                     self.o_queues[ind].put(output_tensor)
                     self.evt.clear()
