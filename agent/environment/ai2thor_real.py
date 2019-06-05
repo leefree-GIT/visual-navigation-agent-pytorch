@@ -45,22 +45,22 @@ class THORDiscreteEnvironment(Environment):
         self.started = False   
         
         self.history_length = history_length
+        print(terminal_state)
         self.terminal_state = terminal_state
-
-        self.transform = transforms.Compose([
-        transforms.Resize((224,224)), 
-        transforms.ToTensor(), 
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
 
         self.time = 0
         self.terminal = False
         self.collided = False
+
+        self.reachable_pos = None
+        self.target_feature = None
 
     def start(self):
         if not self.started:
             # Init unity controller
             self.controller.start() 
             self.started = True
+            self.init()
 
             # Get terminal position
             pos = self.terminal_state['position']
@@ -68,35 +68,41 @@ class THORDiscreteEnvironment(Environment):
             # Get terminal rotation
             rot = self.terminal_state['rotation']
 
-            event = self.controller.step(dict(action='TeleportFull', **pos, rotation=rot['y'], horizon=30.0))
-            self.target_feature = self._tiled_state(event.frame)
+            self.state = self.controller.step(dict(action='TeleportFull', **pos, rotation=rot['y'], horizon=30.0))
+            self.target_feature = self._tiled_state(self.state.frame)
+            self.state = self.controller.step(dict(action='RotateLeft'))
 
-            self.reachable_pos = self.controller.step(dict(action='GetReachablePositions')).metadata['reachablePositions']
-
+            self.reachable_pos = self.controller.step(dict(action='GetReachablePositions', gridSize=self.grid_size)).metadata['reachablePositions']
+        else:
+            self.init()
 
         self.time = 0
         self.terminal = False
         self.collided = False
 
-    def reset(self):
-        # Reset will start the controller (unity window)
-        self.start()
-
+    def init(self):
 
         # Reset the environnment
         self.controller.reset(self.name)
+        
+        # gridSize specifies the coarseness of the grid that the agent navigates on
+        self.state = self.controller.step(dict(action='Initialize', gridSize=self.grid_size, renderObjectImage=True))
 
+    def reset(self):
+        # Reset will start the controller (unity window)
+        self.start()
 
         # Get random number
         k = random.randrange(len(self.reachable_pos))
         
         start = self.reachable_pos[k]
+        
+        print(len(self.reachable_pos))
 
         # Teleport to random start point
-        self.controller.step(dict(action='Teleport', **start))
+        self.state = self.controller.step(dict(action='Teleport', **start))
+        print(self.state.metadata['agent']['position'])
 
-        # gridSize specifies the coarseness of the grid that the agent navigates on
-        self.state = self.controller.step(dict(action='Initialize', gridSize=self.grid_size, renderObjectImage=True))
         self.s_t = self._tiled_state(self.state.frame)
         
     # Util fun, tile state to match history length

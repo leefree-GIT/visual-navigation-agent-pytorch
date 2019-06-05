@@ -111,6 +111,7 @@ venv.bak/
 !agent/environment/
 !eval.py
 !train.py
+!explore.py
 !docker-compose.yaml
 !Dockerfile
 !LICENSE
