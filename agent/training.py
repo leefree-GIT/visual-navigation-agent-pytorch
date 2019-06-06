@@ -18,9 +18,6 @@ import torchvision.transforms.functional as F
 import numpy as np
 from contextlib import suppress
 import re
-from agent.constants import TOTAL_PROCESSED_FRAMES, EARLY_STOP
-from agent.constants import TASK_LIST
-from agent.constants import SAVING_PERIOD, MAX_STEP
 
 from torchvision.models.resnet import resnet50
 
@@ -33,7 +30,7 @@ logging.basicConfig(level=logging.DEBUG)
 class TrainingSaver:
     def __init__(self, shared_network, scene_networks, optimizer, config):
         self.checkpoint_path = config.get('checkpoint_path', 'model/checkpoint-{checkpoint}.pth')
-        self.saving_period = config.get('saving_period', SAVING_PERIOD)
+        self.saving_period = config.get('saving_period')
         self.shared_network = shared_network
         self.scene_networks = scene_networks
         self.optimizer = optimizer
@@ -69,7 +66,7 @@ class TrainingSaver:
 
         self.shared_network.load_state_dict(state['navigation'])
 
-        tasks = self.config.get('tasks', TASK_LIST)
+        tasks = self.config.get('task_list')
         for scene in tasks.keys():
             self.scene_networks[scene].load_state_dict(state[f'navigation/{scene}'])
 
@@ -153,18 +150,18 @@ class Training:
         self.rmsp_alpha = config.get('rmsp_alpha')
         self.rmsp_epsilon = config.get('rmsp_epsilon')
         self.grad_norm = config.get('grad_norm', 40.0)
-        self.tasks = config.get('tasks', TASK_LIST)
+        self.tasks = config.get('task_list')
         self.checkpoint_path = config.get('checkpoint_path', 'model/checkpoint-{checkpoint}.pth')
-        self.max_t = config.get('max_t', MAX_STEP)
+        self.max_t = config.get('max_t')
         self.num_thread = config.get('num_thread', 1)
-        self.total_epochs = TOTAL_PROCESSED_FRAMES
+        self.total_epochs = config.get('total_step')
         self.initialize()
 
     @staticmethod
     def load_checkpoint(config, fail = True):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         checkpoint_path = config.get('checkpoint_path', 'model/checkpoint-{checkpoint}.pth')
-        total_epochs = TOTAL_PROCESSED_FRAMES 
+        total_epochs = config.get('total_step')
         files = os.listdir(os.path.dirname(checkpoint_path))
         base_name = os.path.basename(checkpoint_path)
         
@@ -191,7 +188,7 @@ class Training:
     def initialize(self):
         # Shared network
         self.shared_network = SharedNetwork()
-        self.scene_networks = { key:SceneSpecificNetwork(4) for key in TASK_LIST.keys() }
+        self.scene_networks = { key:SceneSpecificNetwork(4) for key in self.tasks.keys() }
 
         # Share memory
         self.shared_network.share_memory()
@@ -223,7 +220,7 @@ class Training:
         self.print_parameters()
 
         # Prepare threads
-        branches = [(scene, int(target)) for scene in TASK_LIST.keys() for target in TASK_LIST.get(scene)]
+        branches = [(scene, int(target)) for scene in self.tasks.keys() for target in self.tasks.get(scene)]
 
 
         # If True use resnet to extract feature
@@ -244,14 +241,12 @@ class Training:
                     network = net,
                     scene = scene,
                     saver = self.saver,
-                    max_t = self.max_t,
                     terminal_state_id = target,
                     device = self.device,
                     input_queue = i_queue,
                     output_queue = o_queue,
                     evt = evt,
                     summary_queue = summary_queue,
-                    use_resnet = use_resnet,
                     **self.config)
             else:
                 return TrainingThread(
@@ -260,14 +255,12 @@ class Training:
                     network = net,
                     scene = scene,
                     saver = self.saver,
-                    max_t = self.max_t,
                     terminal_state_id = target,
                     device = self.device,
                     input_queue = i_queue,
                     output_queue = o_queue,
                     evt = evt,
                     summary_queue = summary_queue,
-                    use_resnet = use_resnet,
                     **self.config)
 
         # Retrieve number of task
@@ -292,7 +285,7 @@ class Training:
             output_queues.append(output_queue)
 
         # Create a summary thread to log
-        self.summary = SummaryThread(summary_queue)
+        self.summary = SummaryThread(self.config['log_path'], summary_queue)
 
 
 
@@ -303,7 +296,7 @@ class Training:
         # Create GPUThread to handle feature computation
         if use_resnet:
             h5_file_path = self.config.get('h5_file_path')
-            self.gpu = GPUThread(resnet_custom, self.device, input_queues, output_queues, list(TASK_LIST.keys()), h5_file_path, evt)
+            self.gpu = GPUThread(resnet_custom, self.device, input_queues, output_queues, list(self.tasks.keys()), h5_file_path, evt)
 
         # Create at least 1 thread per task
         for i in range(self.num_thread):
@@ -312,7 +305,7 @@ class Training:
 
         
         # self.threads = [_createThread(i, task) for i, task in enumerate(branches)]
-        print(f"Running for {EARLY_STOP}")
+        print(f"Running for {self.total_epochs}")
         try:
             # Start the logger thread
             self.summary.start()

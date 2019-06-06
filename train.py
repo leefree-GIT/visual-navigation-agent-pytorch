@@ -1,9 +1,11 @@
 #!/usr/bin/env python
-import torch
 import argparse
 import multiprocessing as mp
+import torch
 
 from agent.training import Training
+from agent.utils import populate_config
+
 
 if __name__ == '__main__':
     mp.set_start_method('spawn')
@@ -24,9 +26,9 @@ if __name__ == '__main__':
         help='decay parameter for RMSProp optimizer (default: 0.99)')
     parser.add_argument('--rmsp_epsilon', type = float, default = 0.1,
         help='epsilon parameter for RMSProp optimizer (default: 0.1)')
-    parser.add_argument('--num_thread', type = int, default=20, help='number of total threads')
-    parser.add_argument('--resnet', action='store_true')
-    parser.add_argument('--cuda', type = str, default='0')
+
+    # Use experiment.json
+    parser.add_argument('--exp', '-e', type = str, help='Experiment parameters.json file', required=True)
 
     torch.manual_seed(0)
     torch.backends.cudnn.deterministic = True
@@ -34,13 +36,20 @@ if __name__ == '__main__':
 
 
     args = vars(parser.parse_args())
+    args = populate_config(args)
 
-    device = torch.device("cuda:" + args['cuda'] if torch.cuda.is_available() else "cpu")
+    if args['cuda_id'] != -1:
+        device = torch.device("cuda:" + str(args['cuda_id']) if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device("cpu")
     print(device)
+    print(torch.get_num_threads())
+
+
+
     # torch.backends.cudnn.enabled = False
     # device = torch.device('cpu')
 
-    print(torch.get_num_threads())
     if args['restore']:
         t = Training.load_checkpoint(args)
     else:

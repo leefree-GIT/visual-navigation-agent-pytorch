@@ -3,7 +3,7 @@
 from agent.network import SharedNetwork, SceneSpecificNetwork, SharedResnet
 from agent.resnet import resnet50
 from agent.environment import THORDiscreteEnvironment
-from agent.training import TrainingSaver, TOTAL_PROCESSED_FRAMES
+from agent.training import TrainingSaver
 from agent.utils import find_restore_point
 import torch.nn.functional as F
 import torch
@@ -18,9 +18,7 @@ import torch.multiprocessing as mp
 
 from agent.gpu_thread import GPUThread
 
-from agent.constants import TASK_LIST
 from agent.constants import ACTION_SPACE_SIZE
-from agent.constants import NUM_EVAL_EPISODES
 from agent.constants import VERBOSE
 import time
 
@@ -45,7 +43,7 @@ class Evaluation:
     def __init__(self, config):
         self.config = config
         self.shared_net = SharedNetwork()
-        self.scene_nets = { key:SceneSpecificNetwork(ACTION_SPACE_SIZE) for key in TASK_LIST.keys() }
+        self.scene_nets = { key:SceneSpecificNetwork(ACTION_SPACE_SIZE) for key in config['task_list'].keys() }
 
     @staticmethod
     def load_checkpoint(config, fail = True):
@@ -70,19 +68,17 @@ class Evaluation:
             # Download pretrained resnet
             resnet_trained = resnet50(pretrained=True)
             resnet_trained.to(device)
-            resnet_custom = SharedResnet()
-            resnet_custom.load_resnet_pretrained(resnet_trained.state_dict())
+            resnet_custom = SharedResnet(resnet_trained)
             resnet_custom.to(device)
             resnet_custom.share_memory()
-            resnet_custom.resnet.share_memory()
 
             input_queue = mp.Queue()
             output_queue = mp.Queue()
             h5_file_path = self.config.get('h5_file_path')
             evt = mp.Event()
-            gpu_thread = GPUThread(resnet_custom, device, [input_queue], [output_queue], list(TASK_LIST.keys()), h5_file_path, evt)
+            gpu_thread = GPUThread(resnet_custom, device, [input_queue], [output_queue], list(self.config['task_list'].keys()), h5_file_path, evt)
             gpu_thread.start()
-        for scene_scope, items in TASK_LIST.items():
+        for scene_scope, items in self.config['task_list'].items():
             scene_net = self.scene_nets[scene_scope]
             scene_stats[scene_scope] = list()
             for task_scope in items:
@@ -108,7 +104,7 @@ class Evaluation:
                 ep_lengths = []
                 ep_collisions = []
                 print('evaluation: %s %s' % (scene_scope, task_scope))
-                for i_episode in range(NUM_EVAL_EPISODES):
+                for i_episode in range(self.config['num_episode']):
                     env.reset()
                     terminal = False
                     ep_reward = 0

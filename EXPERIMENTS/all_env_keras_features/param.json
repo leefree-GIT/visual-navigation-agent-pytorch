@@ -1,0 +1,70 @@
+{
+  "description": "Text Description",
+  "task_list": {
+    "eval": {
+      "bathroom_02": [
+        "30",
+        "93",
+        "23"
+      ],
+      "bedroom_04": [
+        "210",
+        "98",
+        "260"
+      ],
+      "kitchen_02": [
+        "94",
+        "132",
+        "185"
+      ],
+      "living_room_08": [
+        "80",
+        "167",
+        "188"
+      ]
+    },
+    "train": {
+      "bathroom_02": [
+        "26",
+        "37",
+        "43",
+        "53",
+        "69"
+      ],
+      "bedroom_04": [
+        "134",
+        "264",
+        "320",
+        "384",
+        "387"
+      ],
+      "kitchen_02": [
+        "26",
+        "37",
+        "43",
+        "53",
+        "69"
+      ],
+      "living_room_08": [
+        "26",
+        "37",
+        "43",
+        "53",
+        "69"
+      ]
+    }
+  },
+  "total_step": 10000000,
+  "h5_file_path": "./data/{scene}_keras.h5",
+  "saving_period": 100000,
+  "max_t": 5,
+  "train_param": {
+    "cuda": true,
+    "cuda_id": 0,
+    "num_thread": 10,
+    "resnet": false
+  },
+  "eval_param": {
+    "num_episode": 100
+  }
+}
