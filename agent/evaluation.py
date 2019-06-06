@@ -92,12 +92,14 @@ class Evaluation:
                         input_queue=output_queue,
                         output_queue=input_queue,
                         evt = evt,
+                        use_resnet=use_resnet,
                         h5_file_path=(lambda scene: self.config.get("h5_file_path", "D:\\datasets\\visual_navigation_precomputed\\{scene}.h5").replace('{scene}', scene)),
                         terminal_state_id=int(task_scope)
                     )
                 else:
                     env = THORDiscreteEnvironment(
                     scene_name=scene_scope,
+                    use_resnet=use_resnet,
                     h5_file_path=(lambda scene: self.config.get("h5_file_path", "D:\\datasets\\visual_navigation_precomputed\\{scene}.h5").replace('{scene}', scene)),
                     terminal_state_id=int(task_scope)
                 )
