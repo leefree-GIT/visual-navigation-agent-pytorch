@@ -1,6 +1,5 @@
 from agent.network import SceneSpecificNetwork, SharedNetwork, ActorCriticLoss, SharedResnet
 from agent.environment import Environment, THORDiscreteEnvironment
-from agent.constants import MAX_STEP, EARLY_STOP, TOTAL_PROCESSED_FRAMES
 
 import torch.nn as nn
 from typing import Dict, Collection
@@ -110,6 +109,7 @@ class TrainingThread(mp.Process):
         self.logger = logging.getLogger('agent')
         self.logger.setLevel(logging.INFO)
         self.init_args['h5_file_path'] = lambda scene: h5_file_path.replace('{scene}', scene)
+        print(self.init_args)
         
         self.env = THORDiscreteEnvironment(self.scene,
                                             input_queue = self.i_queue,
@@ -117,13 +117,16 @@ class TrainingThread(mp.Process):
                                             evt = self.evt,
                                             **self.init_args)
 
+
+        print('Init 2')
         self.gamma : float = self.init_args.get('gamma', 0.99)
         self.grad_norm: float = self.init_args.get('grad_norm', 40.0)
         entropy_beta : float = self.init_args.get('entropy_beta', 0.01)
-        self.max_t : int = self.init_args.get('max_t', MAX_STEP)# TODO: 5)
+        self.max_t : int = self.init_args.get('max_t')# TODO: 5)
         self.local_t = 0
         self.action_space_size = self.get_action_space_size()
 
+        print('Init 3')
         self.criterion = ActorCriticLoss(entropy_beta)
         self.policy_network = nn.Sequential(SharedNetwork(), SceneSpecificNetwork(self.get_action_space_size()))
         # Initialize the episode
@@ -286,7 +289,7 @@ class TrainingThread(mp.Process):
 
         try:
             self.env.reset()
-            while True and not self.exit.is_set() and self.optimizer.get_global_step() * self.max_t < EARLY_STOP:
+            while True and not self.exit.is_set() and self.optimizer.get_global_step() * self.max_t < self.init_args["total_step"]:
                 self._sync_network()
                 # Plays some samples
                 playout_reward, results, rollout_path = self._forward_explore()

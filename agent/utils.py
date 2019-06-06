@@ -51,7 +51,7 @@ def populate_config(config, mode='train'):
         config['cuda_id'] = compute_param['cuda_id']
     else:
         config['cuda_id'] = -1
-    config['resnet'] = compute_param['resnet']
+    config['use_resnet'] = compute_param['resnet']
     config['num_thread'] = compute_param['num_thread']
 
     eval_param = json_dump['eval_param']

@@ -103,7 +103,6 @@ class Evaluation:
                 ep_rewards = []
                 ep_lengths = []
                 ep_collisions = []
-                print('evaluation: %s %s' % (scene_scope, task_scope))
                 for i_episode in range(self.config['num_episode']):
                     env.reset()
                     terminal = False
@@ -119,9 +118,9 @@ class Evaluation:
                             action = F.softmax(policy, dim=0).multinomial(1).data.numpy()[0]
 
                         env.step(action)
-                        terminal = env.is_terminal
+                        terminal = env.terminal
 
-                        if ep_t == 10000: break
+                        if ep_t == 5000: break
                         if env.collided: ep_collision += 1
                         ep_reward += env.reward
                         ep_t += 1
@@ -132,6 +131,7 @@ class Evaluation:
                     if VERBOSE: print("episode #{} ends after {} steps".format(i_episode, ep_t))
 
                 
+                print('evaluation: %s %s' % (scene_scope, task_scope))
                 print('mean episode reward: %.2f' % np.mean(ep_rewards))
                 print('mean episode length: %.2f' % np.mean(ep_lengths))
                 print('mean episode collision: %.2f' % np.mean(ep_collisions))
