@@ -49,9 +49,14 @@ class Evaluation:
     def load_checkpoint(config, fail = True):
         checkpoint_path = config.get('checkpoint_path', 'model/checkpoint-{checkpoint}.pth')
         
+        import os
         (base_name, restore_point) = find_restore_point(checkpoint_path, fail)
-        print(f'Restoring from checkpoint {restore_point}')
-        state = torch.load(open(os.path.join(os.path.dirname(checkpoint_path), base_name), 'rb'))
+        print(f'Restoring from checkpoint {os.path.basename(checkpoint_path)}')
+        try:
+            state = torch.load(open(os.path.join(os.path.dirname(checkpoint_path), base_name), 'rb'))
+        except:
+            print("Error loading")
+            exit()
         evaluation = Evaluation(config)
         saver = TrainingSaver(evaluation.shared_net, evaluation.scene_nets, None, evaluation.config)
         saver.restore(state)        

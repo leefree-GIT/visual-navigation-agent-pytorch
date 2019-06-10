@@ -26,7 +26,7 @@ def find_restore_point(checkpoint_path, fail = True):
             else: return None
         return (checkpoint_path, None)
 
-def populate_config(config, mode='train'):
+def populate_config(config, mode='train', checkpoint=True):
     exp_path = config['exp']
     json_file = open(exp_path)
     json_dump = json.load(json_file)
@@ -35,7 +35,8 @@ def populate_config(config, mode='train'):
     base_path = os.path.dirname(exp_path) + '/'
     config['base_path'] = base_path
     config['log_path'] = base_path + 'logs'
-    config['checkpoint_path'] = base_path  + 'checkpoints/{checkpoint}.pth'
+    if checkpoint:
+        config['checkpoint_path'] = base_path  + 'checkpoints/{checkpoint}.pth'
     config['h5_file_path'] = json_dump['h5_file_path']
     config['total_step'] = int(json_dump['total_step'])
 

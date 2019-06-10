@@ -139,7 +139,7 @@ class THORDiscreteEnvironment(Environment):
         else:
             self.o_queue.put((self.scene, state_id))
             self.evt.set()
-            return self.i_queue.get()
+            return self.i_queue.get(timeout=1)
             # input_tens = input_tens.to(next(self.resnet_trained.parameters()).device)
             # input_tens = input_tens.unsqueeze(0)
             # res = self.resnet_trained((input_tens,))

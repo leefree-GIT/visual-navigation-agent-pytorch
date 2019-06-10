@@ -119,3 +119,4 @@ venv.bak/
 !requirements.txt
 !.dockerignore
 !*/data/download_scene_dumps.sh
+!evaluate.sh

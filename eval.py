@@ -28,16 +28,20 @@ if __name__ == '__main__':
     argparse.ArgumentParser(description="")
     parser = argparse.ArgumentParser(description='Deep reactive agent.')
     parser.add_argument('--h5_file_path', type = str, default='/app/data/{scene}_keras.h5')
-    parser.add_argument('--checkpoint_path', type = str, default='/model/checkpoint-{checkpoint}.pth')
+    parser.add_argument('--checkpoint_path', type = str, default=None)
     parser.add_argument('--csv_file', type = str, default=None)
+    parser.add_argument('--log_arg', type = int, default=0 )
 
     # Use experiment.json
     parser.add_argument('--exp', '-e', type = str, help='Experiment parameters.json file', required=True)
 
     args = vars(parser.parse_args())
-    args = populate_config(args, mode='eval')
+    if args['checkpoint_path'] is not None:
+        args = populate_config(args, mode='train', checkpoint=False)
+    else:
+        args = populate_config(args, mode='train')
 
-    sys.stdout = Logger(args['base_path'] + 'eval.log')
+    sys.stdout = Logger(args['base_path'] + 'eval' + str(args['log_arg']) + '.log')
 
     t = Evaluation.load_checkpoint(args)
     t.run()
