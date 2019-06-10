@@ -37,9 +37,9 @@ if __name__ == '__main__':
 
     args = vars(parser.parse_args())
     if args['checkpoint_path'] is not None:
-        args = populate_config(args, mode='train', checkpoint=False)
+        args = populate_config(args, mode='eval', checkpoint=False)
     else:
-        args = populate_config(args, mode='train')
+        args = populate_config(args, mode='eval')
 
     sys.stdout = Logger(args['base_path'] + 'eval' + str(args['log_arg']) + '.log')
 
