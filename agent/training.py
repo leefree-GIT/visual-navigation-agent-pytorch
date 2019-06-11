@@ -18,9 +18,6 @@ import torchvision.transforms.functional as F
 import numpy as np
 from contextlib import suppress
 import re
-from agent.constants import TOTAL_PROCESSED_FRAMES, EARLY_STOP
-from agent.constants import TASK_LIST
-from agent.constants import SAVING_PERIOD, MAX_STEP
 
 from agent.resnet import resnet50
 
@@ -28,12 +25,15 @@ from tensorboardX import SummaryWriter
 import logging
 logging.basicConfig(level=logging.DEBUG)
 
+import imp
+MainModel = imp.load_source('MainModel', "agent/resnet/resnet50.py")
+
 # Preprocess obs to match resnet input 
 
 class TrainingSaver:
     def __init__(self, shared_network, scene_networks, optimizer, config):
         self.checkpoint_path = config.get('checkpoint_path', 'model/checkpoint-{checkpoint}.pth')
-        self.saving_period = config.get('saving_period', SAVING_PERIOD)
+        self.saving_period = config.get('saving_period')
         self.shared_network = shared_network
         self.scene_networks = scene_networks
         self.optimizer = optimizer
@@ -69,7 +69,7 @@ class TrainingSaver:
 
         self.shared_network.load_state_dict(state['navigation'])
 
-        tasks = self.config.get('tasks', TASK_LIST)
+        tasks = self.config.get('task_list')
         for scene in tasks.keys():
             self.scene_networks[scene].load_state_dict(state[f'navigation/{scene}'])
 
@@ -153,18 +153,18 @@ class Training:
         self.rmsp_alpha = config.get('rmsp_alpha')
         self.rmsp_epsilon = config.get('rmsp_epsilon')
         self.grad_norm = config.get('grad_norm', 40.0)
-        self.tasks = config.get('tasks', TASK_LIST)
+        self.tasks = config.get('task_list')
         self.checkpoint_path = config.get('checkpoint_path', 'model/checkpoint-{checkpoint}.pth')
-        self.max_t = config.get('max_t', MAX_STEP)
+        self.max_t = config.get('max_t')
         self.num_thread = config.get('num_thread', 1)
-        self.total_epochs = TOTAL_PROCESSED_FRAMES
+        self.total_epochs = config.get('total_step')
         self.initialize()
 
     @staticmethod
     def load_checkpoint(config, fail = True):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         checkpoint_path = config.get('checkpoint_path', 'model/checkpoint-{checkpoint}.pth')
-        total_epochs = TOTAL_PROCESSED_FRAMES 
+        total_epochs = config.get('total_step')
         files = os.listdir(os.path.dirname(checkpoint_path))
         base_name = os.path.basename(checkpoint_path)
         
@@ -191,7 +191,7 @@ class Training:
     def initialize(self):
         # Shared network
         self.shared_network = SharedNetwork()
-        self.scene_networks = { key:SceneSpecificNetwork(4) for key in TASK_LIST.keys() }
+        self.scene_networks = { key:SceneSpecificNetwork(4) for key in self.tasks.keys() }
 
         # Share memory
         self.shared_network.share_memory()
@@ -222,48 +222,58 @@ class Training:
         self.logger.info("Training started")
         self.print_parameters()
 
-        # Download pretrained resnet
-        resnet_trained = resnet50(pretrained=True)
-        resnet_trained.to(self.device)
-        resnet_custom = SharedResnet()
-        resnet_custom.load_resnet_pretrained(resnet_trained.state_dict())
-        resnet_custom.to(self.device)
-        resnet_custom.share_memory()
-        resnet_custom.resnet.share_memory()
-        compare_models(resnet_custom.resnet, resnet_trained)
-
         # Prepare threads
         branches = []
-        for scene in TASK_LIST.keys():
+        for scene in self.tasks.keys():
             it = 0
-            for target in TASK_LIST.get(scene):
+            for target in self.tasks.get(scene):
                 target['id'] = it
                 it = it + 1
                 branches.append((scene, target))
+
+
+        # If True use resnet to extract feature
+        # If False use precomputed one
+        use_resnet = self.config['use_resnet']
+        print(f"Resnet {use_resnet}")
+
 
         def _createThread(id, task, i_queue, o_queue, evt, summary_queue):
             (scene, target) = task
             net = nn.Sequential(self.shared_network, self.scene_networks[scene])
             net.share_memory()
-            return TrainingThread(
-                id = id,
-                optimizer = self.optimizer,
-                network = net,
-                scene = scene,
-                saver = self.saver,
-                max_t = self.max_t,
-                terminal_state = target,
-                device = self.device,
-                input_queue = i_queue,
-                output_queue = o_queue,
-                evt = evt,
-                summary_queue = summary_queue,
-                **self.config)
-           
+
+            if use_resnet:
+                return TrainingThread(
+                    id = id,
+                    optimizer = self.optimizer,
+                    network = net,
+                    scene = scene,
+                    saver = self.saver,
+                    terminal_state = target,
+                    device = self.device,
+                    input_queue = i_queue,
+                    output_queue = o_queue,
+                    evt = evt,
+                    summary_queue = summary_queue,
+                    **self.config)
+            else:
+                return TrainingThread(
+                    id = id,
+                    optimizer = self.optimizer,
+                    network = net,
+                    scene = scene,
+                    saver = self.saver,
+                    terminal_state = target,
+                    device = self.device,
+                    input_queue = i_queue,
+                    output_queue = o_queue,
+                    evt = evt,
+                    summary_queue = summary_queue,
+                    **self.config)
 
         # Retrieve number of task
         num_scene_task =  len(branches)
-
 
         if self.num_thread < num_scene_task:
             self.num_thread = num_scene_task
@@ -284,10 +294,19 @@ class Training:
             output_queues.append(output_queue)
 
         # Create a summary thread to log
-        self.summary = SummaryThread(summary_queue)
+        self.summary = SummaryThread(self.config['log_path'], summary_queue)
+
+
+
 
         # Create GPUThread to handle feature computation
-        self.gpu = GPUThread(resnet_custom, self.device, input_queues, output_queues, list(TASK_LIST.keys()), evt)
+        if use_resnet:
+            # Download pretrained resnet
+            resnet_trained_pytorch = torch.load('agent/resnet/resnet50.pth')
+            resnet_trained_pytorch.eval()
+            resnet_custom = SharedResnet(resnet_trained_pytorch)
+            h5_file_path = self.config.get('h5_file_path')
+            self.gpu = GPUThread(resnet_custom, self.device, input_queues, output_queues, list(self.tasks.keys()), h5_file_path, evt)
 
         # Create at least 1 thread per task
         for i in range(self.num_thread):
@@ -296,13 +315,14 @@ class Training:
 
         
         # self.threads = [_createThread(i, task) for i, task in enumerate(branches)]
-        print(f"Running for {EARLY_STOP}")
+        print(f"Running for {self.total_epochs}")
         try:
             # Start the logger thread
             self.summary.start()
 
             # Start the gpu thread
-            self.gpu.start()
+            if use_resnet:
+                self.gpu.start()
 
             # Then start the agents threads
             for thread in self.threads:
@@ -313,8 +333,9 @@ class Training:
                 thread.join()
             
             # Wait for GPUThread
-            self.gpu.stop()
-            self.gpu.join()
+            if use_resnet:
+                self.gpu.stop()
+                self.gpu.join()
 
             # Wait for logger
             self.summary.stop()
@@ -326,17 +347,18 @@ class Training:
             # we will save the training
             print('Saving training session')
             self.saver.save()
+            
             for thread in self.threads:
                 thread.stop()
                 thread.join()
-                
-            self.gpu.stop()
-            self.gpu.join()
+            if use_resnet:
+                self.gpu.stop()
+                self.gpu.join()
             
             self.summary.stop()
             self.summary.join()
 
-            compare_models(resnet_trained, resnet_custom.resnet)
+            compare_models(resnet_trained, resnet_custom.resnet_layer)
         
 
     def _init_logger(self):

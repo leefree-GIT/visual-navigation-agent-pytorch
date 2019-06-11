@@ -16,6 +16,7 @@ import torch
 import logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
+
 class THORDiscreteEnvironment(Environment):
     '''
     name:
@@ -112,12 +113,14 @@ class THORDiscreteEnvironment(Environment):
     # Util fun, get resnet feature from frame (rgb)
     def _get_state(self, frame):
         if self.o_queue is None or self.i_queue is None:
+            print("ERROR THOR ENV")
             return np.empty((1,1))
 
         frame = np.ascontiguousarray(frame, dtype=np.float32)
-        frame_tensor = torch.from_numpy(frame/255)
-        frame_tensor = self.transform(F.to_pil_image(frame_tensor))
-        frame_tensor = frame_tensor.unsqueeze(0)
+
+        # Convert to bgr
+        frame = frame[:, :, [2, 1, 0]]
+        frame_tensor = torch.from_numpy(frame)
         self.o_queue.put(frame_tensor)
         self.evt.set()
         output = self.i_queue.get()

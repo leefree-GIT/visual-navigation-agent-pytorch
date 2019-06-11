@@ -1,7 +1,6 @@
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
-from agent.resnet import resnet50
 import numpy as np
 
 def compare_models(model_1, model_2):
@@ -36,21 +35,21 @@ class DQN(nn.Module):
         return self.head(x.view(x.size(0), -1))
 
 class SharedResnet(nn.Module):
-    def __init__(self):
+    def __init__(self, resnet):
         super(SharedResnet, self).__init__()
 
-        self.resnet = resnet50()
+        self.resnet_model = resnet
+        for p in self.resnet_model.parameters():
+            p.requires_grad = False
+        self.resnet_model = self.resnet_model.eval()
+        self.avg_pool2D = nn.AdaptiveAvgPool2d((1,1))
 
     def forward(self, inp):
         with torch.no_grad():
-            new_inp = ()
-            for net_inp in inp:
-                new_inp = new_inp + (net_inp,)
 
-            # (obs_past_3, obs_past_2, obs_past_1, obs_now, target,) = new_inp
-            (obs,) = new_inp
-
-            x = self.resnet(obs)
+            x = self.resnet_model(inp)
+            x = self.avg_pool2D(x)
+            x = x.view(-1).unsqueeze(1)
 
             return x
 
