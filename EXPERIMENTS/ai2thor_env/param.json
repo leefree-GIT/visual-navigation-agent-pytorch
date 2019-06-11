@@ -1,0 +1,73 @@
+{
+  "description": "Text Description",
+  "task_list": {
+    "eval": {},
+    "train": {
+      "FloorPlan1": [
+        {
+          "position": {
+            "x": -0.5,
+            "y": 0.9009992,
+            "z": 1.25
+          },
+          "rotation": {
+            "x": 0.0,
+            "y": 270.0,
+            "z": 0.0
+          }
+        },
+        {
+          "position": {
+            "x": -0.25,
+            "y": 0.9009992,
+            "z": -1.25
+          },
+          "rotation": {
+            "x": 0.0,
+            "y": 180.0,
+            "z": 0.0
+          }
+        }
+      ],
+      "FloorPlan2": [
+        {
+          "position": {
+            "x": 1.25,
+            "y": 0.9009992,
+            "z": 0.0
+          },
+          "rotation": {
+            "x": 0.0,
+            "y": 180.0,
+            "z": 0.0
+          }
+        },
+        {
+          "position": {
+            "x": -0.75,
+            "y": 0.9009992,
+            "z": 0.0
+          },
+          "rotation": {
+            "x": 0.0,
+            "y": 270.0,
+            "z": 0.0
+          }
+        }
+      ]
+    }
+  },
+  "total_step": 1000,
+  "h5_file_path": "./data/{scene}_keras.h5",
+  "saving_period": 100000,
+  "max_t": 5,
+  "train_param": {
+    "cuda": true,
+    "cuda_id": 0,
+    "num_thread": 1,
+    "resnet": true
+  },
+  "eval_param": {
+    "num_episode": 20
+  }
+}
