@@ -8,13 +8,12 @@ import signal
 import argparse
 import numpy as np
 from agent.tools import SimpleImageViewer
-from agent.environment import THORDiscreteEnvironment
-from agent.constants import TASK_LIST
+import ai2thor.controller
 
 #
 # Navigate the scene using your keyboard
 #
-
+actions = ["MoveAhead", "RotateRight", "RotateLeft", "MoveBack", "LookUp", "LookDown"]
 def key_press(key, mod):
 
   global human_agent_action, human_wants_restart, stop_requested, info
@@ -30,21 +29,24 @@ def key_press(key, mod):
     human_agent_action = 2
   if key == 0xFF54: # down
     human_agent_action = 3
+  if key == 105: # i key LookUp
+    human_agent_action = 4
+  if key == 107: # k key LookDown
+    human_agent_action = 5
   if key == 32:
     info = True
 
-def rollout(env):
+def rollout(env, state):
 
   global human_agent_action, human_wants_restart, stop_requested, info
   human_agent_action = None
   human_wants_restart = False
-  env.reset()
+  # env.reset()
   while True:
     # waiting for keyboard input
     if human_agent_action is not None:
       # move actions
-      env.step(human_agent_action)
-      print(env.get_state.metadata['agent']['position'])
+      state = env.step(dict(action=actions[human_agent_action]))
       human_agent_action = None
 
     # waiting for reset command
@@ -53,12 +55,11 @@ def rollout(env):
       env.reset()
       human_wants_restart = False
     if info:
-      print(env.get_state.metadata['agent']['position'])
       # print(env.get_state.instance_detections2D)
       info = False
     # check quit command
     if stop_requested: break
-    viewer.imshow(env.render())
+    viewer.imshow(state.frame)
 
 
 if __name__ == '__main__':
@@ -69,9 +70,9 @@ if __name__ == '__main__':
   args = parser.parse_args()
 
   print("Loading scene dump {}".format(args.scene_dump))
-  env = THORDiscreteEnvironment('FloorPlan1', terminal_state=TASK_LIST['FloorPlan1'][0])
-
-  env.reset()
+  controller = ai2thor.controller.Controller()
+  controller.start(player_screen_width = 400, player_screen_height = 300) 
+  state = controller.step(dict(action='Initialize', gridSize=0.25, renderObjectImage=True))
 
   human_agent_action = None
   human_wants_restart = False
@@ -79,13 +80,13 @@ if __name__ == '__main__':
   info = False
   
   viewer = SimpleImageViewer()
-  viewer.imshow(env.render())
+  viewer.imshow(state.frame)
   viewer.window.on_key_press = key_press
 
   print("Use arrow keys to move the agent.")
   print("Press R to reset agent\'s location.")
   print("Press Q to quit.")
 
-  rollout(env)
+  rollout(controller, state)
 
   print("Goodbye.")

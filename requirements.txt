@@ -5,3 +5,5 @@ scikit-image
 h5py
 tensorboardX
 torchvision
+keras
+tqdm
