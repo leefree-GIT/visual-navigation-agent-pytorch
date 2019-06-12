@@ -191,9 +191,10 @@ class Training:
     def initialize(self):
         # Shared network
         self.shared_network = SharedNetwork()
-        self.scene_networks = { key:SceneSpecificNetwork(4) for key in self.tasks.keys() }
+        self.scene_networks = { key:SceneSpecificNetwork(4).to(self.device) for key in self.tasks.keys() }
 
         # Share memory
+        self.shared_network.to(self.device)
         self.shared_network.share_memory()
         for net in self.scene_networks.values():
             net.share_memory()
@@ -242,6 +243,7 @@ class Training:
             (scene, target) = task
             net = nn.Sequential(self.shared_network, self.scene_networks[scene])
             net.share_memory()
+            net.to(device)
 
             if use_resnet:
                 return TrainingThread(

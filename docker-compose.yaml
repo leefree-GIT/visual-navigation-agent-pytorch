@@ -4,17 +4,16 @@ services:
     build:
       context: .
     volumes:
-      - ./agentmodel:/model
+      - ./EXPERIMENTS:/exp
     image: kulhanek/visual-navigation-agent-pytorch
 
   train:
     ipc: host
     runtime: nvidia
-    command: "python -u /app/train.py --num_thread 5"
+    command: "python -u /app/train.py -e /exp/ai2thor_env/param.json"
     image: kulhanek/visual-navigation-agent-pytorch
     volumes:
-      - ./agentmodel:/model
-      - ./runs:/app/runs
+      - ./EXPERIMENTS:/exp
     environment:
       - PYTHONUNBUFFERED=1 
       - OMP_NUM_THREADS=1
@@ -24,11 +23,10 @@ services:
   train_resnet:
     ipc: host
     runtime: nvidia
-    command: "python -u /app/train.py --num_thread 5 --resnet --cuda 0"
+    command: "python -u /app/train.py -e /exp/ai2thor_env/param.json"
     image: kulhanek/visual-navigation-agent-pytorch
     volumes:
-      - ./agentmodel:/model
-      - ./runs:/app/runs
+      - ./EXPERIMENTS:/exp
     environment:
       - PYTHONUNBUFFERED=1 
       - OMP_NUM_THREADS=1
@@ -38,10 +36,10 @@ services:
   eval:
     ipc: host
     runtime: nvidia
-    command: "python -u /app/eval.py"
+    command: "python -u /app/eval.py -e /exp/ai2thor_env/param.json"
     image: kulhanek/visual-navigation-agent-pytorch
     volumes:
-      - ./agentmodel:/model
+      - ./EXPERIMENTS:/exp
     environment:
       - PYTHONUNBUFFERED=1 
       - OMP_NUM_THREADS=1
@@ -70,7 +68,7 @@ services:
     depends_on:
       - agent
     volumes:
-      - ./agentmodel:/model
+      - ./EXPERIMENTS:/app/EXPERIMENTS
     environment:
       - DISPLAY=${DISPLAY}
     image: kulhanek/visual-navigation-agent-pytorch

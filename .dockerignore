@@ -4,3 +4,10 @@ build
 .vscode
 .git
 LICENSE
+agentmodel
+checkpoints
+checkpoints_eval
+EXPERIMENTS
+good_checkpoint
+runs
+venv

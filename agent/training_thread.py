@@ -81,8 +81,6 @@ class TrainingThread(mp.Process):
         self.id = id
         self.device = device
 
-        
-
         self.master_network = network
         self.optimizer = optimizer
 
@@ -103,7 +101,7 @@ class TrainingThread(mp.Process):
             if shared_param.grad is not None:
                 return 
             shared_param._grad = param.grad 
-    
+
     def get_action_space_size(self):
         return len(self.env.actions)
 
@@ -112,19 +110,19 @@ class TrainingThread(mp.Process):
         self.logger = logging.getLogger('agent')
         self.logger.setLevel(logging.INFO)
         self.init_args['h5_file_path'] = lambda scene: h5_file_path.replace('{scene}', scene)
-        
+
         if self.init_args['use_resnet']:
             self.env = THORDiscreteEnvironmentReal(self.scene,
-                                                input_queue = self.i_queue,
-                                                output_queue = self.o_queue, 
-                                                evt = self.evt,
-                                                **self.init_args)
+                                                   input_queue = self.i_queue,
+                                                   output_queue = self.o_queue, 
+                                                   evt = self.evt,
+                                                   **self.init_args)
         else:
             self.env = THORDiscreteEnvironmentFile(self.scene,
-                                                input_queue = self.i_queue,
-                                                output_queue = self.o_queue, 
-                                                evt = self.evt,
-                                                **self.init_args)
+                                                   input_queue = self.i_queue,
+                                                   output_queue = self.o_queue, 
+                                                   evt = self.evt,
+                                                   **self.init_args)
 
 
         self.gamma : float = self.init_args.get('gamma', 0.99)
@@ -136,6 +134,7 @@ class TrainingThread(mp.Process):
 
         self.criterion = ActorCriticLoss(entropy_beta)
         self.policy_network = nn.Sequential(SharedNetwork(), SceneSpecificNetwork(self.get_action_space_size()))
+        self.policy_network = self.policy_network.to(self.device)
         # Initialize the episode
         self._reset_episode()
         self._sync_network()
@@ -143,7 +142,7 @@ class TrainingThread(mp.Process):
     def _reset_episode(self):
         self.episode_reward = 0
         self.episode_length = 0
-        self.episode_max_q = -np.inf
+        self.episode_max_q = torch.FloatTensor([-np.inf]).to(self.device)
         self.env.reset()
 
     def _forward_explore(self):
@@ -167,6 +166,9 @@ class TrainingThread(mp.Process):
             x_processed = torch.from_numpy(state["current"])
             goal_processed = torch.from_numpy(state["goal"])
 
+            x_processed = x_processed.to(self.device)
+            goal_processed = goal_processed.to(self.device)
+
             (policy, value) = self.policy_network((x_processed, goal_processed,))
 
             if (self.id == 0) and (self.local_t % 100) == 0:
@@ -179,11 +181,10 @@ class TrainingThread(mp.Process):
             with torch.no_grad():
                 (_, action,) = policy.max(0)
                 action = F.softmax(policy, dim=0).multinomial(1).item()
-            
-            policy = policy.data.numpy()
-            value = value.data.numpy()
-            
-            
+
+            policy = policy.data#.numpy()
+            value = value.data#.numpy()
+
             # Makes the step in the environment
             self.env.step(action)
 
@@ -199,7 +200,8 @@ class TrainingThread(mp.Process):
             # Update episode stats
             self.episode_length += 1
             self.episode_reward += reward
-            self.episode_max_q = max(self.episode_max_q, np.max(value))
+            with torch.no_grad():
+                self.episode_max_q = torch.max(self.episode_max_q, torch.max(value))
 
             # clip reward
             reward = np.clip(reward, -1, 1)
@@ -220,14 +222,14 @@ class TrainingThread(mp.Process):
                 print(f'episode length: {self.episode_length}')
                 # print(f'episode shortest length: {self.env.shortest_path_distance_start}')
                 print(f'episode reward: {self.episode_reward}')
-                print(f'episode max_q: {self.episode_max_q}')
+                print(f'episode max_q: {self.episode_max_q.detach().cpu().numpy()[0]}')
                 
                 scene_log = self.scene + '-' + str(self.id)
                 step = self.optimizer.get_global_step() * self.max_t
 
                 # Send info to logger thread
                 self.summary_queue.put((scene_log + '/episode_length', self.episode_length, step))
-                self.summary_queue.put((scene_log + '/max_q', float(self.episode_max_q), step))
+                self.summary_queue.put((scene_log + '/max_q', float(self.episode_max_q.detach().cpu().numpy()[0]), step))
                 self.summary_queue.put((scene_log + '/reward', float(self.episode_reward), step))
                 self.summary_queue.put((scene_log + '/learning_rate', float(self.optimizer.scheduler.get_lr()[0]), step))
 
@@ -240,6 +242,9 @@ class TrainingThread(mp.Process):
         else:
             x_processed = torch.from_numpy(self.env.render('resnet_features'))
             goal_processed = torch.from_numpy(self.env.render_target('resnet_features'))
+
+            x_processed = x_processed.to(self.device)
+            goal_processed = goal_processed.to(self.device)
 
             (_, value) = self.policy_network((x_processed, goal_processed,))
             return value.data.item(), results, rollout_path
@@ -266,17 +271,17 @@ class TrainingThread(mp.Process):
             temporary_difference_batch.append(temporary_difference)
             playout_reward_batch.append(playout_reward)
         
-        policy_batch = torch.stack(policy_batch, 0)
-        value_batch = torch.stack(value_batch, 0)
-        action_batch = torch.from_numpy(np.array(action_batch, dtype=np.int64))
-        temporary_difference_batch = torch.from_numpy(np.array(temporary_difference_batch, dtype=np.float32))
-        playout_reward_batch = torch.from_numpy(np.array(playout_reward_batch, dtype=np.float32))
+        policy_batch = torch.stack(policy_batch, 0).to(self.device)
+        value_batch = torch.stack(value_batch, 0).to(self.device)
+        action_batch = torch.from_numpy(np.array(action_batch, dtype=np.int64)).to(self.device)
+        temporary_difference_batch = torch.from_numpy(np.array(temporary_difference_batch, dtype=np.float32)).to(self.device)
+        playout_reward_batch = torch.from_numpy(np.array(playout_reward_batch, dtype=np.float32)).to(self.device)
         
         # Compute loss
         loss = self.criterion.forward(policy_batch, value_batch, action_batch, temporary_difference_batch, playout_reward_batch)
         loss = loss.sum()
 
-        loss_value = loss.detach().numpy()
+        # loss_value = loss.detach().numpy()
         self.optimizer.optimize(loss, 
             self.policy_network.parameters(), 
             self.master_network.parameters())
