@@ -71,7 +71,7 @@ class THORDiscreteEnvironment(Environment):
 
 
         # LAST instruction
-        terminal_id = -1
+        terminal_id = None
         for i, loc in enumerate(self.locations):
             if np.array_equal(loc, list(self.terminal_state['position'].values())):
                 if np.array_equal(self.rotations[i], list(self.terminal_state['rotation'].values())):
@@ -105,7 +105,7 @@ class THORDiscreteEnvironment(Environment):
             agent_pos = self.locations[self.current_state_id] # NDARRAY
             agent_rot = self.rotations[self.current_state_id][1] # Check only y value
 
-            terminal_pos = self.terminal_state['position'].values() # NDARRAY
+            terminal_pos = list(self.terminal_state['position'].values()) # NDARRAY
             terminal_rot = self.terminal_state['rotation']['y'] # Check only y value
 
             if np.array_equal(agent_pos, terminal_pos) and np.array_equal(agent_rot, terminal_rot):
