@@ -5,13 +5,13 @@ services:
       context: .
     volumes:
       - ./EXPERIMENTS:/exp
-    image: kulhanek/visual-navigation-agent-pytorch
+    image: norips/visual-navigation-agent-pytorch
 
   train:
     ipc: host
     runtime: nvidia
     command: "python -u /app/train.py -e /exp/ai2thor_env/param.json"
-    image: kulhanek/visual-navigation-agent-pytorch
+    image: norips/visual-navigation-agent-pytorch
     volumes:
       - ./EXPERIMENTS:/exp
     environment:
@@ -24,7 +24,7 @@ services:
     ipc: host
     runtime: nvidia
     command: "python -u /app/train.py -e /exp/ai2thor_env/param.json"
-    image: kulhanek/visual-navigation-agent-pytorch
+    image: norips/visual-navigation-agent-pytorch
     volumes:
       - ./EXPERIMENTS:/exp
     environment:
@@ -37,7 +37,7 @@ services:
     ipc: host
     runtime: nvidia
     command: "python -u /app/eval.py -e /exp/ai2thor_env/param.json"
-    image: kulhanek/visual-navigation-agent-pytorch
+    image: norips/visual-navigation-agent-pytorch
     volumes:
       - ./EXPERIMENTS:/exp
     environment:
@@ -49,7 +49,7 @@ services:
   train_restore:
     ipc: host
     runtime: nvidia
-    image: kulhanek/visual-navigation-agent-pytorch
+    image: norips/visual-navigation-agent-pytorch
     volumes:
       - ./agentmodel:/model
       - ./runs:/app/runs
@@ -71,4 +71,4 @@ services:
       - ./EXPERIMENTS:/app/EXPERIMENTS
     environment:
       - DISPLAY=${DISPLAY}
-    image: kulhanek/visual-navigation-agent-pytorch
+    image: norips/visual-navigation-agent-pytorch

@@ -22,6 +22,8 @@ from agent.constants import ACTION_SPACE_SIZE
 from agent.constants import VERBOSE
 import time
 
+import imp
+MainModel = imp.load_source('MainModel', "agent/resnet/resnet50.py")
 
 
 def export_to_csv(data, file):
@@ -71,9 +73,8 @@ class Evaluation:
             mp.set_start_method('spawn')
             device = torch.device("cuda")
             # Download pretrained resnet
-            resnet_trained = resnet50(pretrained=True)
-            resnet_trained.to(device)
-            resnet_custom = SharedResnet(resnet_trained)
+            resnet_trained_pytorch = torch.load('agent/resnet/resnet50.pth')
+            resnet_custom = SharedResnet(resnet_trained_pytorch)
             resnet_custom.to(device)
             resnet_custom.share_memory()
 
