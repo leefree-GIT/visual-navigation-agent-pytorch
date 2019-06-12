@@ -57,15 +57,15 @@
       ]
     }
   },
-  "total_step": 1000,
-  "h5_file_path": "./data/{scene}_keras.h5",
+  "total_step": 1000000,
+  "h5_file_path": "./data/{scene}.h5",
   "saving_period": 100000,
   "max_t": 5,
   "train_param": {
     "cuda": true,
     "cuda_id": 0,
     "num_thread": 1,
-    "resnet": true
+    "resnet": false
   },
   "eval_param": {
     "num_episode": 20

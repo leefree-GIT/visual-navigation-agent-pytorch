@@ -1,5 +1,6 @@
 from agent.network import SceneSpecificNetwork, SharedNetwork, ActorCriticLoss, SharedResnet
-from agent.environment import Environment, THORDiscreteEnvironment
+from agent.environment.ai2thor_file import THORDiscreteEnvironment as THORDiscreteEnvironmentFile
+from agent.environment.ai2thor_real import THORDiscreteEnvironment as THORDiscreteEnvironmentReal
 
 import torch.nn as nn
 from typing import Dict, Collection
@@ -53,6 +54,7 @@ class TrainingThread(mp.Process):
             output_queue: mp.Queue,
             evt,
             summary_queue: mp.Queue,
+            device,
             **kwargs):
         """TrainingThread constructor
         
@@ -77,6 +79,7 @@ class TrainingThread(mp.Process):
         self.saver = saver
         self.local_backbone_network = SharedNetwork()
         self.id = id
+        self.device = device
 
         
 
@@ -110,11 +113,18 @@ class TrainingThread(mp.Process):
         self.logger.setLevel(logging.INFO)
         self.init_args['h5_file_path'] = lambda scene: h5_file_path.replace('{scene}', scene)
         
-        self.env = THORDiscreteEnvironment(self.scene,
-                                            input_queue = self.i_queue,
-                                            output_queue = self.o_queue, 
-                                            evt = self.evt,
-                                            **self.init_args)
+        if self.init_args['use_resnet']:
+            self.env = THORDiscreteEnvironmentReal(self.scene,
+                                                input_queue = self.i_queue,
+                                                output_queue = self.o_queue, 
+                                                evt = self.evt,
+                                                **self.init_args)
+        else:
+            self.env = THORDiscreteEnvironmentFile(self.scene,
+                                                input_queue = self.i_queue,
+                                                output_queue = self.o_queue, 
+                                                evt = self.evt,
+                                                **self.init_args)
 
 
         self.gamma : float = self.init_args.get('gamma', 0.99)

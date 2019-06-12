@@ -42,8 +42,6 @@ if __name__ == '__main__':
     else:
         device = torch.device("cpu")
     print(device)
-    # torch.backends.cudnn.enabled = False
-    # device = torch.device('cpu')
 
     if args['restore']:
         t = Training.load_checkpoint(args)

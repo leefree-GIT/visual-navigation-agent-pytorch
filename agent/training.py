@@ -238,7 +238,7 @@ class Training:
         print(f"Resnet {use_resnet}")
 
 
-        def _createThread(id, task, i_queue, o_queue, evt, summary_queue):
+        def _createThread(id, task, i_queue, o_queue, evt, summary_queue, device):
             (scene, target) = task
             net = nn.Sequential(self.shared_network, self.scene_networks[scene])
             net.share_memory()
@@ -310,7 +310,7 @@ class Training:
 
         # Create at least 1 thread per task
         for i in range(self.num_thread):
-            self.threads.append(_createThread(i, branches[i%num_scene_task], output_queues[i], input_queues[i], evt, summary_queue))
+            self.threads.append(_createThread(i, branches[i%num_scene_task], output_queues[i], input_queues[i], evt, summary_queue, self.device))
         
 
         
@@ -357,8 +357,6 @@ class Training:
             
             self.summary.stop()
             self.summary.join()
-
-            compare_models(resnet_trained, resnet_custom.resnet_layer)
         
 
     def _init_logger(self):
