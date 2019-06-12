@@ -8,7 +8,7 @@ import h5py
 from tqdm import tqdm
 import ai2thor.controller
 names = ["FloorPlan1", "FloorPlan2", "FloorPlan201", "FloorPlan202", "FloorPlan301", "FloorPlan302", "FloorPlan401", "FloorPlan402"]
-grid_size = 1.5
+grid_size = 0.5
 
 actions = ["MoveAhead", "RotateRight", "RotateLeft", "MoveBack", "LookUp", "LookDown", "MoveRight", "MoveLeft"]
 rotation_possible_inplace = 4
@@ -37,14 +37,14 @@ if __name__ == '__main__':
     controller = ai2thor.controller.Controller()
     controller.start(player_screen_width = 400, player_screen_height = 300) 
 
+    #Use resnet from Keras to compute features
+    resnet_trained = resnet50.ResNet50(include_top=False, weights='imagenet', pooling='avg', input_shape=(300, 400, 3))
+    # Freeze all layers
+    for layer in resnet_trained.layers:
+        layer.trainable = False
+
     for name in names:
         h5_file = h5py.File("data/" + name + '.h5', 'w')
-
-        #Use resnet from Keras to compute features
-        resnet_trained = resnet50.ResNet50(include_top=False, weights='imagenet', pooling='avg', input_shape=(300, 400, 3))
-        # Freeze all layers
-        for layer in resnet_trained.layers:
-            layer.trainable = False
 
         # Reset the environnment
         controller.reset(name)
@@ -128,7 +128,8 @@ if __name__ == '__main__':
                     if found is None:
                         print(state_controller_named)
                         print("Error, state not found")
-                        exit()
+                        # exit()
+                        continue
                     graph[state.id][i] = found.id
 
         # Save it to h5 file
@@ -142,4 +143,3 @@ if __name__ == '__main__':
         shortest_path_distance = np.ones((num_states, num_states))
         h5_file.create_dataset('shortest_path_distance', data=shortest_path_distance)
         h5_file.close()
-        break
