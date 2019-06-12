@@ -1,7 +1,8 @@
 import os
+import math
 import re
 import json
-
+import GPUtil
 def find_restore_point(checkpoint_path, fail = True):
     checkpoint_path = os.path.abspath(checkpoint_path)
 
@@ -48,10 +49,7 @@ def populate_config(config, mode='train', checkpoint=True):
     config['max_t'] = int(json_dump['max_t'])
 
     compute_param =  json_dump['train_param']
-    if compute_param['cuda']:
-        config['cuda_id'] = compute_param['cuda_id']
-    else:
-        config['cuda_id'] = -1
+    config['cuda'] = compute_param['cuda']
     config['use_resnet'] = compute_param['resnet']
     config['num_thread'] = compute_param['num_thread']
 
@@ -60,3 +58,11 @@ def populate_config(config, mode='train', checkpoint=True):
     config['num_episode'] = eval_param['num_episode']
 
     return config
+
+def get_first_free_gpu(memory_needed):
+    GPUs = GPUtil.getGPUs()
+    # maxLoad = 2 Bypass maxLoad filter
+    GPUs_available = GPUtil.getAvailability(GPUs, maxLoad = 2, maxMemory = 1, memoryFree=memory_needed)
+    GPUs_available = [gpu for i, gpu in enumerate(GPUs) if (GPUs_available[i] == 1)]
+    GPUs_available.sort(key=lambda x: float('inf') if math.isnan(x.memoryUtil) else x.memoryUtil, reverse=False)
+    return GPUs_available[0].id

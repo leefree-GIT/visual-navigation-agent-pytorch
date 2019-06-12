@@ -37,8 +37,8 @@ if __name__ == '__main__':
     args = vars(parser.parse_args())
     args = populate_config(args)
 
-    if args['cuda_id'] != -1:
-        device = torch.device("cuda:" + str(args['cuda_id']) if torch.cuda.is_available() else "cpu")
+    if args['cuda'] != -1:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     else:
         device = torch.device("cpu")
     print(device)

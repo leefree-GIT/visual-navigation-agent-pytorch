@@ -20,6 +20,7 @@ from contextlib import suppress
 import re
 
 from agent.resnet import resnet50
+from agent.utils import get_first_free_gpu
 
 from tensorboardX import SummaryWriter
 import logging
@@ -312,7 +313,12 @@ class Training:
 
         # Create at least 1 thread per task
         for i in range(self.num_thread):
-            self.threads.append(_createThread(i, branches[i%num_scene_task], output_queues[i], input_queues[i], evt, summary_queue, self.device))
+            device = self.device
+            if self.config['cuda']:
+                device = get_first_free_gpu(600)
+                if device is None:
+                    device = torch.device("cpu")
+            self.threads.append(_createThread(i, branches[i%num_scene_task], output_queues[i], input_queues[i], evt, summary_queue, device))
         
 
         
