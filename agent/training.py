@@ -144,8 +144,7 @@ class AnnealingLRScheduler(torch.optim.lr_scheduler._LRScheduler):
 
 
 class Training:
-    def __init__(self, device, config):
-        self.device = device
+    def __init__(self, config):
         self.config = config
         self.logger: logging.Logger = self._init_logger()
         self.learning_rate = config.get('learning_rate')
