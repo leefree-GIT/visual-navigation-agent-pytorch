@@ -47,6 +47,7 @@ def populate_config(config, mode='train', checkpoint=True):
         config['task_list'] = json_dump['task_list']['eval']
     config['saving_period'] = int(json_dump['saving_period'])
     config['max_t'] = int(json_dump['max_t'])
+    config['action_size'] = int(json_dump['action_size'])
 
     compute_param =  json_dump['train_param']
     config['cuda'] = compute_param['cuda']

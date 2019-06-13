@@ -42,12 +42,12 @@ class TrainingSaver:
 
     def after_optimization(self):
         iteration = self.optimizer.get_global_step()
-        if iteration % self.saving_period == 0:
+        if iteration*self.config['max_t'] % self.saving_period == 0:
             print('Saving training session')
             self.save()
 
     def save(self):
-        iteration = self.optimizer.get_global_step()
+        iteration = self.optimizer.get_global_step()*self.config['max_t']
         filename = self.checkpoint_path.replace('{checkpoint}', str(iteration))
         model = dict()
         model['navigation'] = self.shared_network.state_dict()

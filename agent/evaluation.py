@@ -2,7 +2,8 @@
 
 from agent.network import SharedNetwork, SceneSpecificNetwork, SharedResnet
 from agent.resnet import resnet50
-from agent.environment import THORDiscreteEnvironment
+from agent.environment.ai2thor_file import THORDiscreteEnvironment as THORDiscreteEnvironmentFile
+from agent.environment.ai2thor_real import THORDiscreteEnvironment as THORDiscreteEnvironmentReal
 from agent.training import TrainingSaver
 from agent.utils import find_restore_point
 import torch.nn.functional as F
@@ -68,7 +69,7 @@ class Evaluation:
     def run(self):
         scene_stats = dict()
         resultData = []
-        use_resnet = self.config.get("resnet")
+        use_resnet = self.config.get("use_resnet")
         if use_resnet:
             mp.set_start_method('spawn')
             device = torch.device("cuda")
@@ -89,7 +90,7 @@ class Evaluation:
             scene_stats[scene_scope] = list()
             for task_scope in items:
                 if use_resnet:
-                    env = THORDiscreteEnvironment(
+                    env = THORDiscreteEnvironmentReal(
                         scene_name=scene_scope,
                         input_queue=output_queue,
                         output_queue=input_queue,
@@ -99,11 +100,12 @@ class Evaluation:
                         terminal_state_id=int(task_scope)
                     )
                 else:
-                    env = THORDiscreteEnvironment(
+                    env = THORDiscreteEnvironmentFile(
                     scene_name=scene_scope,
                     use_resnet=use_resnet,
                     h5_file_path=(lambda scene: self.config.get("h5_file_path", "D:\\datasets\\visual_navigation_precomputed\\{scene}.h5").replace('{scene}', scene)),
-                    terminal_state = task_scope
+                    terminal_state = task_scope,
+                    action_size = self.config['action_size']
                 )
 
                 ep_rewards = []
