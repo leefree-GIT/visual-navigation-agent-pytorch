@@ -144,8 +144,7 @@ class AnnealingLRScheduler(torch.optim.lr_scheduler._LRScheduler):
 
 
 class Training:
-    def __init__(self, device, config):
-        self.device = device
+    def __init__(self, config):
         self.config = config
         self.logger: logging.Logger = self._init_logger()
         self.learning_rate = config.get('learning_rate')
@@ -158,6 +157,13 @@ class Training:
         self.max_t = config.get('max_t')
         self.num_thread = config.get('num_thread', 1)
         self.total_epochs = config.get('total_step')
+        self.device = torch.device("cpu")
+        if self.config['cuda']:
+            device_id = get_first_free_gpu(600)
+            if device_id is None:
+                self.device = torch.device("cpu")
+            else:
+                self.device = torch.device("cuda:" + str(device_id))
         self.initialize()
 
     @staticmethod
@@ -318,11 +324,14 @@ class Training:
 
         # Create at least 1 thread per task
         for i in range(self.num_thread):
-            device = self.device
             if self.config['cuda']:
-                device = get_first_free_gpu(600)
-                if device is None:
+                device_id = get_first_free_gpu(600)
+                if device_id is None:
                     device = torch.device("cpu")
+                else:
+                    device = torch.device("cuda:" + str(device_id))
+            else:
+                device = torch.device("cpu")
             self.threads.append(_createThread(
                 i, branches[i % num_scene_task], output_queues[i], input_queues[i], evt, summary_queue, device))
 

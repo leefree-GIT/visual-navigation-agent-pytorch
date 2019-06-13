@@ -76,6 +76,8 @@ def get_first_free_gpu(memory_needed):
         GPUs, maxLoad=2, maxMemory=1, memoryFree=memory_needed)
     GPUs_available = [gpu for i, gpu in enumerate(
         GPUs) if (GPUs_available[i] == 1)]
+    if not GPUs_available:
+        return None
     GPUs_available.sort(key=lambda x: float('inf') if math.isnan(
         x.memoryUtil) else x.memoryUtil, reverse=False)
     return GPUs_available[0].id
