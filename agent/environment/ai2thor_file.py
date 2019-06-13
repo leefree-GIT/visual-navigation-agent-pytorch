@@ -93,6 +93,8 @@ class THORDiscreteEnvironment(Environment):
 
         self.collided = False
         self.terminal = False
+        self.bbox_area = 0
+        self.max_bbox_area = 0
         self.time = 0
 
     def step(self, action):
