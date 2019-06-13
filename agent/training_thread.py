@@ -163,16 +163,19 @@ class TrainingThread(mp.Process):
             state = {
                 "current": self.env.render('resnet_features'),
                 "goal": self.env.render_target('resnet_features'),
+                "object_mask": self.env.render_mask()
             }
 
             x_processed = torch.from_numpy(state["current"])
             goal_processed = torch.from_numpy(state["goal"])
+            object_mask = torch.from_numpy(state['object_mask'])
 
             x_processed = x_processed.to(self.device)
             goal_processed = goal_processed.to(self.device)
+            object_mask = object_mask.to(self.device)
 
             (policy, value) = self.policy_network(
-                (x_processed, goal_processed,))
+                (x_processed, goal_processed, object_mask,))
 
             if (self.id == 0) and (self.local_t % 100) == 0:
                 print(f'Local Step {self.local_t}')
@@ -195,7 +198,7 @@ class TrainingThread(mp.Process):
             is_terminal = self.env.is_terminal
 
             # ad-hoc reward for navigation
-            reward = 10.0 if is_terminal else -0.01
+            reward = self.env.reward
 
             # Max episode length
             if self.episode_length > 5e3:
@@ -254,11 +257,14 @@ class TrainingThread(mp.Process):
             x_processed = torch.from_numpy(self.env.render('resnet_features'))
             goal_processed = torch.from_numpy(
                 self.env.render_target('resnet_features'))
+            object_mask = torch.from_numpy(self.env.render_mask())
 
             x_processed = x_processed.to(self.device)
             goal_processed = goal_processed.to(self.device)
+            object_mask = object_mask.to(self.device)
 
-            (_, value) = self.policy_network((x_processed, goal_processed,))
+            (_, value) = self.policy_network(
+                (x_processed, goal_processed, object_mask,))
             return value.data.item(), results, rollout_path
 
     def _optimize_path(self, playout_reward: float, results, rollout_path):

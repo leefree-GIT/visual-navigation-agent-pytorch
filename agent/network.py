@@ -63,30 +63,39 @@ class SharedResnet(nn.Module):
 
 
 class SharedNetwork(nn.Module):
-    def __init__(self):
+    def __init__(self, mask_size=5):
         super(SharedNetwork, self).__init__()
 
-        # Siemense layer
-        self.fc_siemense = nn.Linear(8192, 512)
+        # Target object layer
+        self.fc_target = nn.Linear(2048, 512)
+
+        # Observation layer
+        self.fc_observation = nn.Linear(8192, 512)
 
         # Merge layer
-        self.fc_merge = nn.Linear(1024, 512)
+        self.fc_merge = nn.Linear(1024+(mask_size*mask_size), 512)
 
     def forward(self, inp):
-        (x, y,) = inp
+        # x is the observation
+        # y is the target
+        # z is the objetc location mask
+        (x, y, z) = inp
 
         x = x.view(-1)
-        x = self.fc_siemense(x)
+        x = self.fc_observation(x)
         x = F.relu(x, True)
 
         y = y.view(-1)
-        y = self.fc_siemense(y)
+        y = self.fc_target(y)
         y = F.relu(y, True)
 
+        z = z.view(-1)
+
         xy = torch.stack([x, y], 0).view(-1)
-        xy = self.fc_merge(xy)
-        xy = F.relu(xy, True)
-        return xy
+        xyz = torch.cat([xy, z])
+        xyz = self.fc_merge(xyz)
+        xyz = F.relu(xyz, True)
+        return xyz
 
 
 class SceneSpecificNetwork(nn.Module):

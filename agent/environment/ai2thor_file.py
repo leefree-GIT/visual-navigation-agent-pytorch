@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import json
 import random
 
 import h5py
@@ -16,6 +17,7 @@ class THORDiscreteEnvironment(Environment):
                  terminal_state=0,
                  h5_file_path=None,
                  action_size: int = 4,
+                 mask_size: int = 5,
                  **kwargs):
         """THORDiscreteEnvironment constructor, it represent a world where an agent evolves
 
@@ -56,16 +58,25 @@ class THORDiscreteEnvironment(Environment):
 
         self.action_size = action_size
 
+        object_ids = json.loads(self.h5_file.attrs['object_ids'])
+        object_feature = self.h5_file['object_feature']
+
+        self.bbox_area = 0
+        self.max_bbox_area = 0
+
         self.time = 0
 
         # LAST instruction
-        terminal_id = None
-        for i, loc in enumerate(self.locations):
-            if np.array_equal(loc, list(self.terminal_state['position'].values())):
-                if np.array_equal(self.rotations[i], list(self.terminal_state['rotation'].values())):
-                    terminal_id = i
-                    break
-        self.s_target = self._tiled_state(terminal_id)
+        # terminal_id = None
+        # for i, loc in enumerate(self.locations):
+        #     if np.array_equal(loc, list(self.terminal_state['position'].values())):
+        #         if np.array_equal(self.rotations[i], list(self.terminal_state['rotation'].values())):
+        #             terminal_id = i
+        #             break
+        # self.s_target = self._tiled_state(terminal_id)
+        self.s_target = object_feature[object_ids[self.terminal_state['object']]]
+
+        self.mask_size = mask_size
 
     def reset(self):
         # randomize initial state
@@ -110,6 +121,11 @@ class THORDiscreteEnvironment(Environment):
 
         self.s_t = np.append(self.s_t[:, 1:], self._get_state(
             self.current_state_id), axis=1)
+
+        # Retrieve bounding box area of target object class
+        self.bbox_area = self._get_max_bbox_area(
+            self.boudingbox, self.terminal_state['object'])
+
         self.time = self.time + 1
 
     def _get_state(self, state_id):
@@ -121,16 +137,45 @@ class THORDiscreteEnvironment(Environment):
         f = self._get_state(state_id)
         return np.tile(f, (1, self.history_length))
 
-    def _calculate_reward(self, terminal, collided):
-        # positive reward upon task completion
-        if terminal:
-            return 10.0
-        # time penalty or collision penalty
-        return -0.1 if collided else -0.01
+    def _get_max_bbox_area(self, bboxs, obj_class):
+        area = 0
+        for key, value in bboxs.items():
+            keys = key.split('|')
+            if keys[0] == obj_class:
+                w = abs(value[0] - value[2])
+                h = abs(value[1] + value[3])
+                area = max(area, w * h)
+        return area
+
+    def _calculate_reward(self, bbox_area, max_bbox_area):
+        if bbox_area > max_bbox_area:
+            max_bbox_area = bbox_area
+            return max_bbox_area
+        else:
+            return 0
+
+    def _downsample_bbox(self, input_shape, output_shape, input_bbox):
+        h, w = input_shape
+        out_h, out_w = output_shape
+
+        ratio_h = out_h / h
+        ratio_w = out_w / w
+
+        output = np.zeros(output_shape, dtype=np.float32)
+
+        for i_bbox in input_bbox:
+            bbox_x, bbox_y = i_bbox
+            out_x = int(ratio_w * bbox_x)
+            out_y = int(ratio_h * bbox_y)
+            output[out_x, out_y] = 1
+        return output
 
     @property
     def reward(self):
-        return self._calculate_reward(self.is_terminal, self.collided)
+        reward_ = self._calculate_reward(self.bbox_area, self.max_bbox_area)
+        if reward_ != 0:
+            self.max_bbox_area = reward_
+        return reward_
 
     @property
     def is_terminal(self):
@@ -142,7 +187,7 @@ class THORDiscreteEnvironment(Environment):
 
     @property
     def boudingbox(self):
-        return self.h5_file['bbox'][self.current_state_id]
+        return json.loads(self.h5_file['bbox'][self.current_state_id])
 
     def render(self, mode):
         assert mode == 'resnet_features'
@@ -152,11 +197,26 @@ class THORDiscreteEnvironment(Environment):
         assert mode == 'resnet_features'
         return self.s_target
 
+    def render_mask(self):
+        # Get shape of observation to downsample bbox location
+        h, w, c = np.shape(self.h5_file['observation'][0])
+
+        bbox_location = []
+        for key, value in self.boudingbox.items():
+            keys = key.split('|')
+            if keys[0] == self.terminal_state['object']:
+                x = value[0] + value[2]
+                x = x/2
+                y = value[1] + value[3]
+                y = y/2
+                bbox_location.append((x, y))
+        return self._downsample_bbox((h, w), (self.mask_size, self.mask_size), bbox_location)
+
     @property
     def actions(self):
         acts = ["MoveAhead", "RotateRight", "RotateLeft", "MoveBack",
                 "LookUp", "LookDown", "MoveRight", "MoveLeft"]
-        return acts[:self.action_size]
+        return acts[: self.action_size]
 
     def stop(self):
         pass

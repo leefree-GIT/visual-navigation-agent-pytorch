@@ -118,5 +118,9 @@ venv.bak/
 !LICENSE
 !README.md
 !requirements.txt
-!.dockerignore
-!*/data/download_scene_dumps.sh
+!.dockerignore	
+!data/
+data/*
+!data/download_scene_dumps.sh
+!data/objects
+!data/objects/*
