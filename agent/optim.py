@@ -1,17 +1,19 @@
 # Taken from
 # https://raw.githubusercontent.com/jingweiz/pytorch-rl/master/optims/sharedRMSprop.py
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-from torch import optim, Tensor
+from __future__ import absolute_import, division, print_function
+
+from torch import optim
 
 # Non-centered RMSprop update with shared statistics (without momentum)
+
+
 class SharedRMSprop(optim.RMSprop):
     """Implements RMSprop algorithm with shared states.
     """
 
     def __init__(self, params, lr=1e-2, alpha=0.99, eps=1e-8, weight_decay=0):
-        super(SharedRMSprop, self).__init__(params, lr=lr, alpha=alpha, eps=eps, weight_decay=weight_decay, momentum=0, centered=False)
+        super(SharedRMSprop, self).__init__(params, lr=lr, alpha=alpha,
+                                            eps=eps, weight_decay=weight_decay, momentum=0, centered=False)
 
         # State initialisation (must be done before step, else will not be shared between threads)
         for group in self.param_groups:

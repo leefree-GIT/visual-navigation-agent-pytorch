@@ -1,24 +1,23 @@
-from agent.network import SceneSpecificNetwork, SharedNetwork, ActorCriticLoss, SharedResnet
-from agent.environment.ai2thor_file import THORDiscreteEnvironment as THORDiscreteEnvironmentFile
-from agent.environment.ai2thor_real import THORDiscreteEnvironment as THORDiscreteEnvironmentReal
-
-import torch.nn as nn
-from typing import Dict, Collection
-import signal
-import random
-import torch
-import h5py
-from agent.replay import ReplayMemory, Sample
-from collections import namedtuple
-import torch.multiprocessing as mp
-import torch.nn.functional as F
-import numpy as np
 import logging
-from tensorboardX import SummaryWriter
-
-import sys
-import pdb
 import os
+import pdb
+import signal
+import sys
+from collections import namedtuple
+
+import h5py
+import numpy as np
+import torch
+import torch.multiprocessing as mp
+import torch.nn as nn
+import torch.nn.functional as F
+
+from agent.environment.ai2thor_file import \
+    THORDiscreteEnvironment as THORDiscreteEnvironmentFile
+from agent.environment.ai2thor_real import \
+    THORDiscreteEnvironment as THORDiscreteEnvironmentReal
+from agent.network import ActorCriticLoss, SceneSpecificNetwork, SharedNetwork
+
 
 class ForkablePdb(pdb.Pdb):
 
@@ -38,26 +37,29 @@ class ForkablePdb(pdb.Pdb):
         finally:
             sys.stdin = current_stdin
 
-TrainingSample = namedtuple('TrainingSample', ('state', 'policy', 'value', 'action_taken', 'goal', 'R', 'temporary_difference'))
+
+TrainingSample = namedtuple('TrainingSample', ('state', 'policy',
+                                               'value', 'action_taken', 'goal', 'R', 'temporary_difference'))
 
 
 class TrainingThread(mp.Process):
     """This thread is an agent, it will explore the world and backpropagate gradient
     """
+
     def __init__(self,
-            id : int,
-            network : torch.nn.Module,
-            saver,
-            optimizer,
-            scene : str,
-            input_queue: mp.Queue,
-            output_queue: mp.Queue,
-            evt,
-            summary_queue: mp.Queue,
-            device,
-            **kwargs):
+                 id: int,
+                 network: torch.nn.Module,
+                 saver,
+                 optimizer,
+                 scene: str,
+                 input_queue: mp.Queue,
+                 output_queue: mp.Queue,
+                 evt,
+                 summary_queue: mp.Queue,
+                 device,
+                 **kwargs):
         """TrainingThread constructor
-        
+
         Arguments:
             id {int} -- UID of the thread
             network {torch.nn.Module} -- Master network shared by all TrainingThread
@@ -99,8 +101,8 @@ class TrainingThread(mp.Process):
     def _ensure_shared_grads(self):
         for param, shared_param in zip(self.policy_network.parameters(), self.master_network.parameters()):
             if shared_param.grad is not None:
-                return 
-            shared_param._grad = param.grad 
+                return
+            shared_param._grad = param.grad
 
     def get_action_space_size(self):
         return len(self.env.actions)
@@ -109,31 +111,32 @@ class TrainingThread(mp.Process):
         h5_file_path = self.init_args.get('h5_file_path')
         self.logger = logging.getLogger('agent')
         self.logger.setLevel(logging.INFO)
-        self.init_args['h5_file_path'] = lambda scene: h5_file_path.replace('{scene}', scene)
+        self.init_args['h5_file_path'] = lambda scene: h5_file_path.replace(
+            '{scene}', scene)
 
         if self.init_args['use_resnet']:
             self.env = THORDiscreteEnvironmentReal(self.scene,
-                                                   input_queue = self.i_queue,
-                                                   output_queue = self.o_queue, 
-                                                   evt = self.evt,
+                                                   input_queue=self.i_queue,
+                                                   output_queue=self.o_queue,
+                                                   evt=self.evt,
                                                    **self.init_args)
         else:
             self.env = THORDiscreteEnvironmentFile(self.scene,
-                                                   input_queue = self.i_queue,
-                                                   output_queue = self.o_queue, 
-                                                   evt = self.evt,
+                                                   input_queue=self.i_queue,
+                                                   output_queue=self.o_queue,
+                                                   evt=self.evt,
                                                    **self.init_args)
 
-
-        self.gamma : float = self.init_args.get('gamma', 0.99)
+        self.gamma: float = self.init_args.get('gamma', 0.99)
         self.grad_norm: float = self.init_args.get('grad_norm', 40.0)
-        entropy_beta : float = self.init_args.get('entropy_beta', 0.01)
-        self.max_t : int = self.init_args.get('max_t')# TODO: 5)
+        entropy_beta: float = self.init_args.get('entropy_beta', 0.01)
+        self.max_t: int = self.init_args.get('max_t')
         self.local_t = 0
         self.action_space_size = self.get_action_space_size()
 
         self.criterion = ActorCriticLoss(entropy_beta)
-        self.policy_network = nn.Sequential(SharedNetwork(), SceneSpecificNetwork(self.get_action_space_size()))
+        self.policy_network = nn.Sequential(
+            SharedNetwork(), SceneSpecificNetwork(self.get_action_space_size()))
         self.policy_network = self.policy_network.to(self.device)
         # Initialize the episode
         self._reset_episode()
@@ -150,15 +153,14 @@ class TrainingThread(mp.Process):
         is_terminal = False
         terminal_end = False
 
-        results = { "policy":[], "value": []}
+        results = {"policy": [], "value": []}
         rollout_path = {"state": [], "action": [], "rewards": [], "done": []}
-
 
         # Plays out one game to end or max_t
         for t in range(self.max_t):
 
             # Resnet feature are extracted or computed here
-            state = { 
+            state = {
                 "current": self.env.render('resnet_features'),
                 "goal": self.env.render_target('resnet_features'),
             }
@@ -169,7 +171,8 @@ class TrainingThread(mp.Process):
             x_processed = x_processed.to(self.device)
             goal_processed = goal_processed.to(self.device)
 
-            (policy, value) = self.policy_network((x_processed, goal_processed,))
+            (policy, value) = self.policy_network(
+                (x_processed, goal_processed,))
 
             if (self.id == 0) and (self.local_t % 100) == 0:
                 print(f'Local Step {self.local_t}')
@@ -182,8 +185,8 @@ class TrainingThread(mp.Process):
                 (_, action,) = policy.max(0)
                 action = F.softmax(policy, dim=0).multinomial(1).item()
 
-            policy = policy.data#.numpy()
-            value = value.data#.numpy()
+            policy = policy.data  # .numpy()
+            value = value.data  # .numpy()
 
             # Makes the step in the environment
             self.env.step(action)
@@ -195,13 +198,15 @@ class TrainingThread(mp.Process):
             reward = 10.0 if is_terminal else -0.01
 
             # Max episode length
-            if self.episode_length > 5e3: is_terminal = True
+            if self.episode_length > 5e3:
+                is_terminal = True
 
             # Update episode stats
             self.episode_length += 1
             self.episode_reward += reward
             with torch.no_grad():
-                self.episode_max_q = torch.max(self.episode_max_q, torch.max(value))
+                self.episode_max_q = torch.max(
+                    self.episode_max_q, torch.max(value))
 
             # clip reward
             reward = np.clip(reward, -1, 1)
@@ -216,46 +221,52 @@ class TrainingThread(mp.Process):
 
             if is_terminal:
                 # TODO: add logging
-                print(f"time {self.optimizer.get_global_step() * self.max_t} | thread #{self.id} | scene {self.scene} | target #{self.env.terminal_state['id']}")
+                print(
+                    f"time {self.optimizer.get_global_step() * self.max_t} | thread #{self.id} | scene {self.scene} | target #{self.env.terminal_state['id']}")
 
                 print('playout finished')
                 print(f'episode length: {self.episode_length}')
                 # print(f'episode shortest length: {self.env.shortest_path_distance_start}')
                 print(f'episode reward: {self.episode_reward}')
-                print(f'episode max_q: {self.episode_max_q.detach().cpu().numpy()[0]}')
-                
+                print(
+                    f'episode max_q: {self.episode_max_q.detach().cpu().numpy()[0]}')
+
                 scene_log = self.scene + '-' + str(self.id)
                 step = self.optimizer.get_global_step() * self.max_t
 
                 # Send info to logger thread
-                self.summary_queue.put((scene_log + '/episode_length', self.episode_length, step))
-                self.summary_queue.put((scene_log + '/max_q', float(self.episode_max_q.detach().cpu().numpy()[0]), step))
-                self.summary_queue.put((scene_log + '/reward', float(self.episode_reward), step))
-                self.summary_queue.put((scene_log + '/learning_rate', float(self.optimizer.scheduler.get_lr()[0]), step))
+                self.summary_queue.put(
+                    (scene_log + '/episode_length', self.episode_length, step))
+                self.summary_queue.put(
+                    (scene_log + '/max_q', float(self.episode_max_q.detach().cpu().numpy()[0]), step))
+                self.summary_queue.put(
+                    (scene_log + '/reward', float(self.episode_reward), step))
+                self.summary_queue.put(
+                    (scene_log + '/learning_rate', float(self.optimizer.scheduler.get_lr()[0]), step))
 
                 terminal_end = True
                 self._reset_episode()
-                break      
+                break
 
         if terminal_end:
             return 0.0, results, rollout_path
         else:
             x_processed = torch.from_numpy(self.env.render('resnet_features'))
-            goal_processed = torch.from_numpy(self.env.render_target('resnet_features'))
+            goal_processed = torch.from_numpy(
+                self.env.render_target('resnet_features'))
 
             x_processed = x_processed.to(self.device)
             goal_processed = goal_processed.to(self.device)
 
             (_, value) = self.policy_network((x_processed, goal_processed,))
             return value.data.item(), results, rollout_path
-    
+
     def _optimize_path(self, playout_reward: float, results, rollout_path):
         policy_batch = []
         value_batch = []
         action_batch = []
         temporary_difference_batch = []
         playout_reward_batch = []
-
 
         for i in reversed(range(len(results["value"]))):
             reward = rollout_path["rewards"][i]
@@ -270,30 +281,34 @@ class TrainingThread(mp.Process):
             action_batch.append(action)
             temporary_difference_batch.append(temporary_difference)
             playout_reward_batch.append(playout_reward)
-        
+
         policy_batch = torch.stack(policy_batch, 0).to(self.device)
         value_batch = torch.stack(value_batch, 0).to(self.device)
-        action_batch = torch.from_numpy(np.array(action_batch, dtype=np.int64)).to(self.device)
-        temporary_difference_batch = torch.from_numpy(np.array(temporary_difference_batch, dtype=np.float32)).to(self.device)
-        playout_reward_batch = torch.from_numpy(np.array(playout_reward_batch, dtype=np.float32)).to(self.device)
-        
+        action_batch = torch.from_numpy(
+            np.array(action_batch, dtype=np.int64)).to(self.device)
+        temporary_difference_batch = torch.from_numpy(
+            np.array(temporary_difference_batch, dtype=np.float32)).to(self.device)
+        playout_reward_batch = torch.from_numpy(
+            np.array(playout_reward_batch, dtype=np.float32)).to(self.device)
+
         # Compute loss
-        loss = self.criterion.forward(policy_batch, value_batch, action_batch, temporary_difference_batch, playout_reward_batch)
+        loss = self.criterion.forward(
+            policy_batch, value_batch, action_batch, temporary_difference_batch, playout_reward_batch)
         loss = loss.sum()
 
         # loss_value = loss.detach().numpy()
-        self.optimizer.optimize(loss, 
-            self.policy_network.parameters(), 
-            self.master_network.parameters())
+        self.optimizer.optimize(loss,
+                                self.policy_network.parameters(),
+                                self.master_network.parameters())
 
-    def run(self, master = None):
+    def run(self, master=None):
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         print(f'Thread {self.id} ready')
-        
+
         # We need to silence all errors on new process
         h5py._errors.silence_errors()
         self._initialize_thread()
-                
+
         if not master is None:
             print(f'Master thread {self.id} started')
         else:
@@ -318,7 +333,7 @@ class TrainingThread(mp.Process):
             # compare_models(self.resnet_model.resnet, self.resnet_network)
         except Exception as e:
             # TODO: add logging
-            #self.logger.error(e.msg)
+            # self.logger.error(e.msg)
             raise e
 
     def stop(self):

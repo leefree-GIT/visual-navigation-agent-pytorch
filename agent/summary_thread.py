@@ -1,11 +1,13 @@
-import torch.multiprocessing as mp
 from queue import Empty
 
+import torch.multiprocessing as mp
 from tensorboardX import SummaryWriter
+
+
 class SummaryThread(mp.Process):
     def __init__(self,
-                name : str,
-                input_queue : mp.Queue):
+                 name: str,
+                 input_queue: mp.Queue):
         super(SummaryThread, self).__init__()
         self.i_queue = input_queue
         self.name = name
@@ -21,6 +23,7 @@ class SummaryThread(mp.Process):
             except Empty:
                 pass
         print("Exiting SummaryThread")
+
     def stop(self):
         print("Stop initiated for SummaryThread")
         self.exit.set()

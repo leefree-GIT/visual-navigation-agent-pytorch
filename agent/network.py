@@ -1,7 +1,7 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch
-import numpy as np
+
 
 def compare_models(model_1, model_2):
     models_differ = 0
@@ -16,6 +16,7 @@ def compare_models(model_1, model_2):
                 raise Exception
     if models_differ == 0:
         print('Models match perfectly! :)')
+
 
 class DQN(nn.Module):
     def __init__(self):
@@ -34,6 +35,7 @@ class DQN(nn.Module):
         x = F.relu(self.bn3(self.conv3(x)))
         return self.head(x.view(x.size(0), -1))
 
+
 class SharedResnet(nn.Module):
     def __init__(self, resnet):
         super(SharedResnet, self).__init__()
@@ -42,7 +44,7 @@ class SharedResnet(nn.Module):
         for p in self.resnet_model.parameters():
             p.requires_grad = False
         self.resnet_model = self.resnet_model.eval()
-        self.avg_pool2D = nn.AdaptiveAvgPool2d((1,1))
+        self.avg_pool2D = nn.AdaptiveAvgPool2d((1, 1))
 
     def forward(self, inp):
         with torch.no_grad():
@@ -59,36 +61,39 @@ class SharedResnet(nn.Module):
             p.requires_grad = False
         self.resnet.eval()
 
+
 class SharedNetwork(nn.Module):
     def __init__(self):
         super(SharedNetwork, self).__init__()
 
         # Siemense layer
-        self.fc_siemense= nn.Linear(8192, 512)
+        self.fc_siemense = nn.Linear(8192, 512)
 
         # Merge layer
         self.fc_merge = nn.Linear(1024, 512)
 
     def forward(self, inp):
         (x, y,) = inp
-        
+
         x = x.view(-1)
-        x = self.fc_siemense(x)  
+        x = self.fc_siemense(x)
         x = F.relu(x, True)
 
         y = y.view(-1)
         y = self.fc_siemense(y)
         y = F.relu(y, True)
 
-        xy = torch.stack([x,y], 0).view(-1)
+        xy = torch.stack([x, y], 0).view(-1)
         xy = self.fc_merge(xy)
         xy = F.relu(xy, True)
         return xy
+
 
 class SceneSpecificNetwork(nn.Module):
     """
     Input for this network is 512 tensor
     """
+
     def __init__(self, action_space_size):
         super(SceneSpecificNetwork, self).__init__()
         self.fc1 = nn.Linear(512, 512)
@@ -108,10 +113,10 @@ class SceneSpecificNetwork(nn.Module):
         x_value = self.fc2_value(x)[0]
         return (x_policy, x_value, )
 
+
 class ActorCriticLoss(nn.Module):
     def __init__(self, entropy_beta):
         self.entropy_beta = entropy_beta
-        pass
 
     def forward(self, policy, value, action_taken, temporary_difference, r):
         # Calculate policy entropy
@@ -130,5 +135,3 @@ class ActorCriticLoss(nn.Module):
         # Equivalent to 0.5 * l2 loss
         value_loss = (0.5 * 0.5) * F.mse_loss(value, r, size_average=False)
         return value_loss + policy_loss
-
-

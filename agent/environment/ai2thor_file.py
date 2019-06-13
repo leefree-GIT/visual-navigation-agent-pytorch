@@ -1,30 +1,24 @@
 # -*- coding: utf-8 -*-
-import sys
-import h5py
-import json
-import numpy as np
 import random
-import skimage.io
-from skimage.transform import resize
+
+import h5py
+import numpy as np
+
 from agent.environment.environment import Environment
-import torch.multiprocessing as mp
-from torchvision import transforms
-import torchvision.transforms.functional as F
-import torch
-import json
+
 
 class THORDiscreteEnvironment(Environment):
-    def __init__(self, 
-            scene_name = 'FloorPlan1',
-            resnet_trained = None,
-            n_feat_per_location = 1,
-            history_length : int = 4,
-            terminal_state = 0,
-            h5_file_path = None,
-            action_size : int = 4,
-            **kwargs):
+    def __init__(self,
+                 scene_name='FloorPlan1',
+                 resnet_trained=None,
+                 n_feat_per_location=1,
+                 history_length: int = 4,
+                 terminal_state=0,
+                 h5_file_path=None,
+                 action_size: int = 4,
+                 **kwargs):
         """THORDiscreteEnvironment constructor, it represent a world where an agent evolves
-        
+
         Keyword Arguments:
             scene_name {str} -- Name of the current world (default: {'bedroom_04'})
             resnet_trained {[type]} -- Resnet network used to compute features (default: {None})
@@ -37,8 +31,6 @@ class THORDiscreteEnvironment(Environment):
             evt {mp.Event} -- Event to tell the GPUThread that there are new data to compute (default: {None})
         """
         super(THORDiscreteEnvironment, self).__init__()
-
-
 
         if h5_file_path is None:
             h5_file_path = f"/app/data/{scene_name}.h5"
@@ -64,11 +56,7 @@ class THORDiscreteEnvironment(Environment):
 
         self.action_size = action_size
 
-
         self.time = 0
-
-
-
 
         # LAST instruction
         terminal_id = None
@@ -79,7 +67,6 @@ class THORDiscreteEnvironment(Environment):
                     break
         self.s_target = self._tiled_state(terminal_id)
 
-
     def reset(self):
         # randomize initial state
         k = random.randrange(self.n_locations)
@@ -89,7 +76,7 @@ class THORDiscreteEnvironment(Environment):
                 break
             k = random.randrange(self.n_locations)
         # reset parameters
-        self.current_state_id = k # TODO: k
+        self.current_state_id = k
         self.start_state_id = k
         self.s_t = self._tiled_state(self.current_state_id)
 
@@ -102,11 +89,14 @@ class THORDiscreteEnvironment(Environment):
         k = self.current_state_id
         if self.transition_graph[k][action] != -1:
             self.current_state_id = self.transition_graph[k][action]
-            agent_pos = self.locations[self.current_state_id] # NDARRAY
-            agent_rot = self.rotations[self.current_state_id][1] # Check only y value
+            agent_pos = self.locations[self.current_state_id]  # NDARRAY
+            # Check only y value
+            agent_rot = self.rotations[self.current_state_id][1]
 
-            terminal_pos = list(self.terminal_state['position'].values()) # NDARRAY
-            terminal_rot = self.terminal_state['rotation']['y'] # Check only y value
+            terminal_pos = list(
+                self.terminal_state['position'].values())  # NDARRAY
+            # Check only y value
+            terminal_rot = self.terminal_state['rotation']['y']
 
             if np.array_equal(agent_pos, terminal_pos) and np.array_equal(agent_rot, terminal_rot):
                 self.terminal = True
@@ -118,13 +108,14 @@ class THORDiscreteEnvironment(Environment):
             self.terminal = False
             self.collided = True
 
-        self.s_t = np.append(self.s_t[:,1:], self._get_state(self.current_state_id), axis=1)
+        self.s_t = np.append(self.s_t[:, 1:], self._get_state(
+            self.current_state_id), axis=1)
         self.time = self.time + 1
 
     def _get_state(self, state_id):
         # read from hdf5 cache
         k = random.randrange(self.n_feat_per_location)
-        return self.h5_file['resnet_feature'][state_id][k][:,np.newaxis]
+        return self.h5_file['resnet_feature'][state_id][k][:, np.newaxis]
 
     def _tiled_state(self, state_id):
         f = self._get_state(state_id)
@@ -132,7 +123,8 @@ class THORDiscreteEnvironment(Environment):
 
     def _calculate_reward(self, terminal, collided):
         # positive reward upon task completion
-        if terminal: return 10.0
+        if terminal:
+            return 10.0
         # time penalty or collision penalty
         return -0.1 if collided else -0.01
 
@@ -162,7 +154,8 @@ class THORDiscreteEnvironment(Environment):
 
     @property
     def actions(self):
-        acts = ["MoveAhead", "RotateRight", "RotateLeft", "MoveBack", "LookUp", "LookDown", "MoveRight", "MoveLeft"]
+        acts = ["MoveAhead", "RotateRight", "RotateLeft", "MoveBack",
+                "LookUp", "LookDown", "MoveRight", "MoveLeft"]
         return acts[:self.action_size]
 
     def stop(self):

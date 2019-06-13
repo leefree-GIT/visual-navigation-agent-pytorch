@@ -7,9 +7,10 @@ resize = T.Compose([T.ToPILImage(),
                     T.Resize(40, interpolation=Image.CUBIC),
                     T.ToTensor()])
 
+
 def get_screen(env, device):
     # transpose into torch order (CHW)
-    screen = env.render(mode='rgb_array').transpose((2, 0, 1))  
+    screen = env.render(mode='rgb_array').transpose((2, 0, 1))
 
     # Strip off the top and bottom of the screen
     screen = screen[:, 160:320]
@@ -21,6 +22,7 @@ def get_screen(env, device):
     # Resize, and add a batch dimension (BCHW)
     return resize(screen).unsqueeze(0).to(device)
 
+
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
     from environment import make
@@ -30,6 +32,6 @@ if __name__ == "__main__":
 
     plt.figure()
     plt.imshow(get_screen(env, torch.device("cpu")).cpu().squeeze(0).permute(1, 2, 0).numpy(),
-            interpolation='none')
+               interpolation='none')
     plt.title('Example extracted screen')
     plt.show()
