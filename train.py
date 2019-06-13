@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 import argparse
 import multiprocessing as mp
+
 import torch
 
 from agent.training import Training
 from agent.utils import populate_config
-
 
 if __name__ == '__main__':
     mp.set_start_method('spawn')
@@ -14,48 +14,43 @@ if __name__ == '__main__':
     parser.add_argument('--entropy_beta', type=float, default=0.01,
                         help='entropy beta (default: 0.01)')
 
-    parser.add_argument('--restore', action='store_true', help='restore from checkpoint')
-    parser.add_argument('--grad_norm', type = float, default=40.0,
-        help='gradient norm clip (default: 40.0)')
+    parser.add_argument('--restore', action='store_true',
+                        help='restore from checkpoint')
+    parser.add_argument('--grad_norm', type=float, default=40.0,
+                        help='gradient norm clip (default: 40.0)')
 
-    parser.add_argument('--h5_file_path', type = str, default='/app/data/{scene}.h5')
-    parser.add_argument('--checkpoint_path', type = str, default='/model/checkpoint-{checkpoint}.pth')
+    parser.add_argument('--h5_file_path', type=str,
+                        default='/app/data/{scene}.h5')
+    parser.add_argument('--checkpoint_path', type=str,
+                        default='/model/checkpoint-{checkpoint}.pth')
 
-    parser.add_argument('--learning_rate', type = float, default= 0.0007001643593729748)
-    parser.add_argument('--rmsp_alpha', type = float, default = 0.99,
-        help='decay parameter for RMSProp optimizer (default: 0.99)')
-    parser.add_argument('--rmsp_epsilon', type = float, default = 0.1,
-        help='epsilon parameter for RMSProp optimizer (default: 0.1)')
+    parser.add_argument('--learning_rate', type=float,
+                        default=0.0007001643593729748)
+    parser.add_argument('--rmsp_alpha', type=float, default=0.99,
+                        help='decay parameter for RMSProp optimizer (default: 0.99)')
+    parser.add_argument('--rmsp_epsilon', type=float, default=0.1,
+                        help='epsilon parameter for RMSProp optimizer (default: 0.1)')
 
     # Use experiment.json
-    parser.add_argument('--exp', '-e', type = str, help='Experiment parameters.json file', required=True)
+    parser.add_argument('--exp', '-e', type=str,
+                        help='Experiment parameters.json file', required=True)
 
     torch.manual_seed(0)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-
     args = vars(parser.parse_args())
     args = populate_config(args)
 
-    if args['cuda_id'] != -1:
-        device = torch.device("cuda:" + str(args['cuda_id']) if torch.cuda.is_available() else "cpu")
+    if args['cuda'] != -1:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     else:
         device = torch.device("cpu")
     print(device)
-    print(torch.get_num_threads())
-
-
-
-    # torch.backends.cudnn.enabled = False
-    # device = torch.device('cpu')
 
     if args['restore']:
         t = Training.load_checkpoint(args)
     else:
-        t = Training(device, args)
+        t = Training(args)
 
     t.run()
-
-
-
