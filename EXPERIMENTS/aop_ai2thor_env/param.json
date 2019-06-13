@@ -1,0 +1,78 @@
+{
+  "description": "Text Description",
+  "task_list": {
+    "eval": {
+      "FloorPlan1": [
+        {
+          "position": {
+            "x": -1.0,
+            "y": 0.9009992,
+            "z": -1.5
+          },
+          "rotation": {
+            "x": 0.0,
+            "y": 270.0,
+            "z": 0.0
+          },
+          "object": "DishSponge"
+        },
+        {
+          "position": {
+            "x": -0.5,
+            "y": 0.9009992,
+            "z": -1.5
+          },
+          "rotation": {
+            "x": 0.0,
+            "y": 180.0,
+            "z": 0.0
+          },
+          "object": "Microwave"
+        }
+      ]
+    },
+    "train": {
+      "FloorPlan1": [
+        {
+          "position": {
+            "x": -0.5,
+            "y": 0.9009992,
+            "z": -1.5
+          },
+          "rotation": {
+            "x": 0.0,
+            "y": 270.0,
+            "z": 0.0
+          },
+          "object": "SoapBottle"
+        },
+        {
+          "position": {
+            "x": 0,
+            "y": 0.9009992,
+            "z": -1.5
+          },
+          "rotation": {
+            "x": 0.0,
+            "y": 180.0,
+            "z": 0.0
+          },
+          "object": "Microwave"
+        }
+      ]
+    }
+  },
+  "total_step": 5000000,
+  "h5_file_path": "./data/{scene}.h5",
+  "saving_period": 1000000,
+  "max_t": 5,
+  "action_size": 4,
+  "train_param": {
+    "cuda": true,
+    "num_thread": 1,
+    "resnet": false
+  },
+  "eval_param": {
+    "num_episode": 20
+  }
+}
