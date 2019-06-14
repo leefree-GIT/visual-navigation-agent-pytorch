@@ -5,14 +5,14 @@
       "FloorPlan1": [
         {
           "position": {
-            "x": -1.0,
+            "x": -1,
             "y": 0.9009992,
             "z": -1.5
           },
           "rotation": {
-            "x": 0.0,
-            "y": 270.0,
-            "z": 0.0
+            "x": 0,
+            "y": 270,
+            "z": 0
           },
           "object": "DishSponge"
         },
@@ -23,9 +23,9 @@
             "z": -1.5
           },
           "rotation": {
-            "x": 0.0,
-            "y": 180.0,
-            "z": 0.0
+            "x": 0,
+            "y": 180,
+            "z": 0
           },
           "object": "Microwave"
         }
@@ -40,9 +40,9 @@
             "z": -1.5
           },
           "rotation": {
-            "x": 0.0,
-            "y": 270.0,
-            "z": 0.0
+            "x": 0,
+            "y": 270,
+            "z": 0
           },
           "object": "SoapBottle"
         },
@@ -53,11 +53,108 @@
             "z": -1.5
           },
           "rotation": {
-            "x": 0.0,
-            "y": 180.0,
-            "z": 0.0
+            "x": 0,
+            "y": 180,
+            "z": 0
           },
           "object": "Microwave"
+        }
+      ],
+      "FloorPlan2": [
+        {
+          "position": {
+            "x": 1,
+            "y": 0.9009992,
+            "z": -0.5
+          },
+          "rotation": {
+            "x": 0,
+            "y": 180,
+            "z": 0
+          },
+          "object": "CoffeeMachine"
+        },
+        {
+          "position": {
+            "x": -1,
+            "y": 0.9009992,
+            "z": -0.5
+          },
+          "rotation": {
+            "x": 0,
+            "y": 180,
+            "z": 0
+          },
+          "object": "Pan"
+        },
+        {
+          "position": {
+            "x": -1.5,
+            "y": 0.9009992,
+            "z": 2.5
+          },
+          "rotation": {
+            "x": 0,
+            "y": 180,
+            "z": 0
+          },
+          "object": "GarbageCan"
+        }
+      ],
+      "FloorPlan201": [
+        {
+          "position": {
+            "x": -2.5,
+            "y": 0.9026567,
+            "z": 5.5
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "object": "Television"
+        },
+        {
+          "position": {
+            "x": -1.5,
+            "y": 0.9026567,
+            "z": 2.5
+          },
+          "rotation": {
+            "x": 0,
+            "y": 180,
+            "z": 0
+          },
+          "object": "Laptop"
+        }
+      ],
+      "FloorPlan301": [
+        {
+          "position": {
+            "x": 0.5,
+            "y": 0.9009992,
+            "z": 0.5
+          },
+          "rotation": {
+            "x": 0,
+            "y": 270,
+            "z": 0
+          },
+          "object": "Laptop"
+        },
+        {
+          "position": {
+            "x": 2.5,
+            "y": 0.9009992,
+            "z": -0.5
+          },
+          "rotation": {
+            "x": 0,
+            "y": 180,
+            "z": 0
+          },
+          "object": "Book"
         }
       ]
     }
@@ -71,7 +168,8 @@
     "cuda": true,
     "num_thread": 8,
     "use_resnet": false,
-    "gamma": 0.70
+    "gamma": 0.99,
+    "seed": 1993
   },
   "eval_param": {
     "num_episode": 20

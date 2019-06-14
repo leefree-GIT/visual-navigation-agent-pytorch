@@ -48,7 +48,7 @@ class Evaluation:
             'checkpoint_path', 'model/checkpoint-{checkpoint}.pth')
 
         import os
-        (base_name, restore_point) = find_restore_point(checkpoint_path, fail)
+        (base_name, _) = find_restore_point(checkpoint_path, fail)
         print(f'Restoring from checkpoint {os.path.basename(base_name)}')
         try:
             state = torch.load(
@@ -123,7 +123,7 @@ class Evaluation:
                             env.render_target(mode='resnet_features'))
                         object_mask = torch.Tensor(env.render_mask())
 
-                        (policy, value,) = scene_net.forward(
+                        (policy, _,) = scene_net.forward(
                             self.shared_net.forward((state, target, object_mask,)))
 
                         with torch.no_grad():

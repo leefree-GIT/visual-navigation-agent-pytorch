@@ -95,11 +95,17 @@ class TrainingThread(mp.Process):
         self.summary_queue = summary_queue
 
     def _sync_network(self):
-        state_dict = self.master_network.state_dict()
-        self.policy_network.load_state_dict(state_dict)
+        if self.init_args['cuda']:
+            with torch.cuda.device(self.device):
+                state_dict = self.master_network.state_dict()
+                self.policy_network.load_state_dict(state_dict)
+        else:
+            state_dict = self.master_network.state_dict()
+            self.policy_network.load_state_dict(state_dict)
 
     def _ensure_shared_grads(self):
         for param, shared_param in zip(self.policy_network.parameters(), self.master_network.parameters()):
+            print("ensure_shared")
             if shared_param.grad is not None:
                 return
             shared_param._grad = param.grad
@@ -108,6 +114,7 @@ class TrainingThread(mp.Process):
         return len(self.env.actions)
 
     def _initialize_thread(self):
+        torch.set_num_threads(1)
         h5_file_path = self.init_args.get('h5_file_path')
         self.logger = logging.getLogger('agent')
         self.logger.setLevel(logging.INFO)
@@ -133,7 +140,6 @@ class TrainingThread(mp.Process):
         self.max_t: int = self.init_args.get('max_t')
         self.local_t = 0
         self.action_space_size = self.get_action_space_size()
-        print("ACTION %d" % self.action_space_size)
 
         self.criterion = ActorCriticLoss(entropy_beta)
         self.policy_network = nn.Sequential(
@@ -224,7 +230,6 @@ class TrainingThread(mp.Process):
             rollout_path["done"].append(is_terminal)
 
             if is_terminal:
-                # TODO: add logging
                 print(
                     f"time {self.optimizer.get_global_step() * self.max_t} | thread #{self.id} | scene {self.scene} | target #{self.env.terminal_state['id']}")
 
@@ -304,9 +309,11 @@ class TrainingThread(mp.Process):
         loss = loss.sum()
 
         # loss_value = loss.detach().numpy()
+
         self.optimizer.optimize(loss,
-                                self.policy_network.parameters(),
-                                self.master_network.parameters())
+                                self.policy_network,
+                                self.master_network,
+                                self.init_args['cuda'])
 
     def run(self, master=None):
         signal.signal(signal.SIGINT, signal.SIG_IGN)
@@ -333,13 +340,12 @@ class TrainingThread(mp.Process):
                     print(f'Global Step {self.optimizer.get_global_step()}')
 
                 # Trigger save or other
-                self.saver.after_optimization()
+                self.saver.after_optimization(self.id)
                 # pass
             self.stop()
             self.env.stop()
             # compare_models(self.resnet_model.resnet, self.resnet_network)
         except Exception as e:
-            # TODO: add logging
             # self.logger.error(e.msg)
             raise e
 

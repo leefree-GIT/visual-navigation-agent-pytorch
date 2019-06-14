@@ -3,17 +3,16 @@ services:
   agent:
     build:
       context: .
-    volumes:
-      - ./EXPERIMENTS:/exp
     image: norips/visual-navigation-agent-pytorch
 
   train:
     ipc: host
     runtime: nvidia
-    command: "python -u /app/train.py -e /exp/ai2thor_env/param.json"
+    command: "python -u /app/train.py -e /exp/aop_ai2thor_env/param.json"
     image: norips/visual-navigation-agent-pytorch
     volumes:
       - ./EXPERIMENTS:/exp
+      - ./data:/app/data
     environment:
       - PYTHONUNBUFFERED=1 
       - OMP_NUM_THREADS=1
@@ -23,10 +22,11 @@ services:
   train_resnet:
     ipc: host
     runtime: nvidia
-    command: "python -u /app/train.py -e /exp/ai2thor_env/param.json"
+    command: "python -u /app/train.py -e /exp/aop_ai2thor_env/param.json"
     image: norips/visual-navigation-agent-pytorch
     volumes:
       - ./EXPERIMENTS:/exp
+      - ./data:/app/data
     environment:
       - PYTHONUNBUFFERED=1 
       - OMP_NUM_THREADS=1
@@ -36,10 +36,11 @@ services:
   eval:
     ipc: host
     runtime: nvidia
-    command: "python -u /app/eval.py -e /exp/ai2thor_env/param.json"
+    command: "python -u /app/eval.py -e /exp/aop_ai2thor_env/param.json"
     image: norips/visual-navigation-agent-pytorch
     volumes:
       - ./EXPERIMENTS:/exp
+      - ./data:/app/data
     environment:
       - PYTHONUNBUFFERED=1 
       - OMP_NUM_THREADS=1
@@ -53,6 +54,7 @@ services:
     volumes:
       - ./agentmodel:/model
       - ./runs:/app/runs
+      - ./data:/app/data
     environment:
       - PYTHONUNBUFFERED=1 
       - OMP_NUM_THREADS=1

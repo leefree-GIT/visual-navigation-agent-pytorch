@@ -159,6 +159,9 @@ class THORDiscreteEnvironment(Environment):
     def _downsample_bbox(self, input_shape, output_shape, input_bbox):
         h, w = input_shape
         out_h, out_w = output_shape
+        # Between 0 and output_shape
+        out_h = out_h - 1
+        out_w = out_w - 1
 
         ratio_h = out_h / h
         ratio_w = out_w / w
@@ -201,7 +204,7 @@ class THORDiscreteEnvironment(Environment):
 
     def render_mask(self):
         # Get shape of observation to downsample bbox location
-        h, w, c = np.shape(self.h5_file['observation'][0])
+        h, w, _ = np.shape(self.h5_file['observation'][0])
 
         bbox_location = []
         for key, value in self.boudingbox.items():
@@ -212,7 +215,13 @@ class THORDiscreteEnvironment(Environment):
                 y = value[1] + value[3]
                 y = y/2
                 bbox_location.append((x, y))
-        return self._downsample_bbox((h, w), (self.mask_size, self.mask_size), bbox_location)
+        try:
+            output = self._downsample_bbox(
+                (h, w), (self.mask_size, self.mask_size), bbox_location)
+        except IndexError as e:
+            print((h, w), bbox_location)
+            raise e
+        return output
 
     @property
     def actions(self):
