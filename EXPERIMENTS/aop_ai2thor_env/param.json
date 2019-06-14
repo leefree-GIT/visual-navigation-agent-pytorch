@@ -66,11 +66,12 @@
   "h5_file_path": "./data/{scene}.h5",
   "saving_period": 1000000,
   "max_t": 5,
-  "action_size": 4,
+  "action_size": 8,
   "train_param": {
     "cuda": true,
-    "num_thread": 1,
-    "resnet": false
+    "num_thread": 8,
+    "use_resnet": false,
+    "gamma": 0.70
   },
   "eval_param": {
     "num_episode": 20

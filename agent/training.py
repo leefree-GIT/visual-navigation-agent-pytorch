@@ -191,11 +191,10 @@ class Training:
 
             (base_name, restore_point) = max(points, key=lambda x: x[1])
 
-        print(f'Restoring from checkpoint {restore_point}')
+        print(f'Restoring from checkpoint {base_name}')
         state = torch.load(
             open(os.path.join(os.path.dirname(checkpoint_path), base_name), 'rb'))
-        training = Training(
-            device, state['config'] if 'config' in state else config)
+        training = Training(state['config'] if 'config' in state else config)
         training.saver.restore(state)
         return training
 
@@ -203,7 +202,7 @@ class Training:
         # Shared network
         self.shared_network = SharedNetwork()
         self.scene_networks = {key: SceneSpecificNetwork(
-            4).to(self.device) for key in self.tasks.keys()}
+            self.config['action_size']).to(self.device) for key in self.tasks.keys()}
 
         # Share memory
         self.shared_network.to(self.device)

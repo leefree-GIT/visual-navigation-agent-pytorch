@@ -8,7 +8,6 @@ import torch
 import torch.multiprocessing as mp
 import torch.nn.functional as F
 
-from agent.constants import ACTION_SPACE_SIZE, VERBOSE
 from agent.environment.ai2thor_file import \
     THORDiscreteEnvironment as THORDiscreteEnvironmentFile
 from agent.environment.ai2thor_real import \
@@ -41,7 +40,7 @@ class Evaluation:
         self.config = config
         self.shared_net = SharedNetwork()
         self.scene_nets = {key: SceneSpecificNetwork(
-            ACTION_SPACE_SIZE) for key in config['task_list'].keys()}
+            self.config['action_size']) for key in config['task_list'].keys()}
 
     @staticmethod
     def load_checkpoint(config, fail=True):
@@ -50,7 +49,7 @@ class Evaluation:
 
         import os
         (base_name, restore_point) = find_restore_point(checkpoint_path, fail)
-        print(f'Restoring from checkpoint {os.path.basename(checkpoint_path)}')
+        print(f'Restoring from checkpoint {os.path.basename(base_name)}')
         try:
             state = torch.load(
                 open(os.path.join(os.path.dirname(checkpoint_path), base_name), 'rb'))
@@ -122,8 +121,10 @@ class Evaluation:
                             env.render(mode='resnet_features'))
                         target = torch.Tensor(
                             env.render_target(mode='resnet_features'))
+                        object_mask = torch.Tensor(env.render_mask())
+
                         (policy, value,) = scene_net.forward(
-                            self.shared_net.forward((state, target,)))
+                            self.shared_net.forward((state, target, object_mask,)))
 
                         with torch.no_grad():
                             action = F.softmax(policy, dim=0).multinomial(
@@ -142,9 +143,8 @@ class Evaluation:
                     ep_lengths.append(ep_t)
                     ep_rewards.append(ep_reward)
                     ep_collisions.append(ep_collision)
-                    if VERBOSE:
-                        print("episode #{} ends after {} steps".format(
-                            i_episode, ep_t))
+                    print("episode #{} ends after {} steps".format(
+                        i_episode, ep_t))
 
                 print('evaluation: %s %s' % (scene_scope, task_scope))
                 print('mean episode reward: %.2f' % np.mean(ep_rewards))

@@ -133,10 +133,11 @@ class TrainingThread(mp.Process):
         self.max_t: int = self.init_args.get('max_t')
         self.local_t = 0
         self.action_space_size = self.get_action_space_size()
+        print("ACTION %d" % self.action_space_size)
 
         self.criterion = ActorCriticLoss(entropy_beta)
         self.policy_network = nn.Sequential(
-            SharedNetwork(), SceneSpecificNetwork(self.get_action_space_size()))
+            SharedNetwork(), SceneSpecificNetwork(self.action_space_size))
         self.policy_network = self.policy_network.to(self.device)
         # Initialize the episode
         self._reset_episode()
