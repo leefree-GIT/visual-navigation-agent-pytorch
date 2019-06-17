@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import sys
+import time
 from contextlib import suppress
 
 import torch
@@ -100,7 +101,7 @@ class TrainingOptimizer:
         for param, shared_param in zip(local_params, shared_params):
             if shared_param.grad is not None:
                 return
-            shared_param._grad = param.grad
+            shared_param._grad = param.grad.to(shared_param.device)  # .cpu()
 
     def optimize(self, loss, local_params, shared_params):
         local_params = list(local_params)
@@ -159,7 +160,7 @@ class Training:
         self.total_epochs = config.get('total_step')
         self.device = torch.device("cpu")
         if self.config['cuda']:
-            device_id = get_first_free_gpu(600)
+            device_id = get_first_free_gpu(1100)
             if device_id is None:
                 self.device = torch.device("cpu")
             else:
@@ -168,7 +169,6 @@ class Training:
 
     @staticmethod
     def load_checkpoint(config, fail=True):
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         checkpoint_path = config.get(
             'checkpoint_path', 'model/checkpoint-{checkpoint}.pth')
         total_epochs = config.get('total_step')
@@ -176,7 +176,6 @@ class Training:
         base_name = os.path.basename(checkpoint_path)
 
         # Find latest checkpoint
-        # TODO: improve speed
         restore_point = None
         if base_name.find('{checkpoint}') != -1:
             regex = re.escape(base_name).replace(
@@ -191,11 +190,10 @@ class Training:
 
             (base_name, restore_point) = max(points, key=lambda x: x[1])
 
-        print(f'Restoring from checkpoint {restore_point}')
+        print(f'Restoring from checkpoint {base_name}')
         state = torch.load(
             open(os.path.join(os.path.dirname(checkpoint_path), base_name), 'rb'))
-        training = Training(
-            device, state['config'] if 'config' in state else config)
+        training = Training(state['config'] if 'config' in state else config)
         training.saver.restore(state)
         return training
 
@@ -203,12 +201,13 @@ class Training:
         # Shared network
         self.shared_network = SharedNetwork()
         self.scene_networks = {key: SceneSpecificNetwork(
-            4).to(self.device) for key in self.tasks.keys()}
+            self.config['action_size']).to(self.device) for key in self.tasks.keys()}
 
         # Share memory
-        self.shared_network.to(self.device)
+        self.shared_network = self.shared_network.to(self.device)
         self.shared_network.share_memory()
         for net in self.scene_networks.values():
+            net = net.to(self.device)
             net.share_memory()
 
         # Callect all parameters from all networks
@@ -258,7 +257,6 @@ class Training:
             net = nn.Sequential(self.shared_network,
                                 self.scene_networks[scene])
             net.share_memory()
-            net.to(device)
 
             if use_resnet:
                 return TrainingThread(
@@ -268,7 +266,7 @@ class Training:
                     scene=scene,
                     saver=self.saver,
                     terminal_state=target,
-                    device=self.device,
+                    device=device,
                     input_queue=i_queue,
                     output_queue=o_queue,
                     evt=evt,
@@ -282,7 +280,7 @@ class Training:
                     scene=scene,
                     saver=self.saver,
                     terminal_state=target,
-                    device=self.device,
+                    device=device,
                     input_queue=i_queue,
                     output_queue=o_queue,
                     evt=evt,
@@ -322,19 +320,6 @@ class Training:
             self.gpu = GPUThread(resnet_custom, self.device, input_queues, output_queues, list(
                 self.tasks.keys()), h5_file_path, evt)
 
-        # Create at least 1 thread per task
-        for i in range(self.num_thread):
-            if self.config['cuda']:
-                device_id = get_first_free_gpu(600)
-                if device_id is None:
-                    device = torch.device("cpu")
-                else:
-                    device = torch.device("cuda:" + str(device_id))
-            else:
-                device = torch.device("cpu")
-            self.threads.append(_createThread(
-                i, branches[i % num_scene_task], output_queues[i], input_queues[i], evt, summary_queue, device))
-
         # self.threads = [_createThread(i, task) for i, task in enumerate(branches)]
         print(f"Running for {self.total_epochs}")
         try:
@@ -345,9 +330,21 @@ class Training:
             if use_resnet:
                 self.gpu.start()
 
-            # Then start the agents threads
-            for thread in self.threads:
-                thread.start()
+            for i in range(self.num_thread):
+                if self.config['cuda']:
+                    device_id = get_first_free_gpu(1100)
+                    if device_id is None:
+                        device = torch.device("cpu")
+                    else:
+                        device = torch.device("cuda:" + str(device_id))
+                else:
+                    device = torch.device("cpu")
+                self.threads.append(_createThread(
+                    i, branches[i % num_scene_task], output_queues[i], input_queues[i], evt, summary_queue, device))
+                self.threads[-1].start()
+                if self.config['cuda']:
+                    # Wait for cuda init
+                    time.sleep(2)
 
             # Wait for agent
             for thread in self.threads:
