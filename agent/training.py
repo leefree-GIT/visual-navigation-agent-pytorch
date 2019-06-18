@@ -97,15 +97,17 @@ class TrainingOptimizer:
     def get_global_step(self):
         return self.global_step.item()
 
-    def _ensure_shared_grads(self, local_params, shared_params):
-        for param, shared_param in zip(local_params, shared_params):
-            if shared_param.grad is not None:
+    def _ensure_shared_grads(self, model, shared_model, gpu=False):
+        for param, shared_param in zip(model.parameters(),
+                                       shared_model.parameters()):
+            if shared_param.grad is not None and not gpu:
                 return
-            shared_param._grad = param.grad.to(shared_param.device)  # .cpu()
+            elif not gpu:
+                shared_param._grad = param.grad
+            else:
+                shared_param._grad = param.grad.cpu()
 
-    def optimize(self, loss, local_params, shared_params):
-        local_params = list(local_params)
-        shared_params = list(shared_params)
+    def optimize(self, loss, local, shared, gpu):
 
         # Fix the optimizer property after unpickling
         self.scheduler.optimizer = self.optimizer
@@ -115,15 +117,17 @@ class TrainingOptimizer:
         with self.lock:
             self.global_step.copy_(torch.tensor(self.global_step.item() + 1))
 
+        local.zero_grad()
         self.optimizer.zero_grad()
 
         # Calculate the new gradient with the respect to the local network
         loss.backward()
 
         # Clip gradient
-        torch.nn.utils.clip_grad_norm_(local_params, self.grad_norm)
+        torch.nn.utils.clip_grad_norm_(
+            list(local.parameters()), self.grad_norm)
 
-        self._ensure_shared_grads(local_params, shared_params)
+        self._ensure_shared_grads(local, shared, gpu)
         self.optimizer.step()
 
     def get_lr(self):
@@ -204,13 +208,13 @@ class Training:
         # Shared network
         self.shared_network = SharedNetwork()
         self.scene_networks = {key: SceneSpecificNetwork(
-            self.config['action_size']).to(self.device) for key in self.tasks.keys()}
+            self.config['action_size']) for key in self.tasks.keys()}
 
         # Share memory
-        self.shared_network = self.shared_network.to(self.device)
+        self.shared_network = self.shared_network
         self.shared_network.share_memory()
         for net in self.scene_networks.values():
-            net = net.to(self.device)
+            net = net
             net.share_memory()
 
         # Callect all parameters from all networks

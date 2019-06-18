@@ -95,11 +95,17 @@ class TrainingThread(mp.Process):
         self.summary_queue = summary_queue
 
     def _sync_network(self):
-        state_dict = self.master_network.state_dict()
-        self.policy_network.load_state_dict(state_dict)
+        if self.init_args['cuda']:
+            with torch.cuda.device(self.device):
+                state_dict = self.master_network.state_dict()
+                self.policy_network.load_state_dict(state_dict)
+        else:
+            state_dict = self.master_network.state_dict()
+            self.policy_network.load_state_dict(state_dict)
 
     def _ensure_shared_grads(self):
         for param, shared_param in zip(self.policy_network.parameters(), self.master_network.parameters()):
+            print("ensure_shared")
             if shared_param.grad is not None:
                 return
             shared_param._grad = param.grad
@@ -301,8 +307,9 @@ class TrainingThread(mp.Process):
 
         # loss_value = loss.detach().numpy()
         self.optimizer.optimize(loss,
-                                self.policy_network.parameters(),
-                                self.master_network.parameters())
+                                self.policy_network,
+                                self.master_network,
+                                self.init_args['cuda'])
 
     def run(self, master=None):
         signal.signal(signal.SIGINT, signal.SIG_IGN)

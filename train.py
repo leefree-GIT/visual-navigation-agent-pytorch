@@ -35,12 +35,13 @@ if __name__ == '__main__':
     parser.add_argument('--exp', '-e', type=str,
                         help='Experiment parameters.json file', required=True)
 
-    torch.manual_seed(0)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
     args = vars(parser.parse_args())
     args = populate_config(args)
+
+    torch.manual_seed(args['seed'])
 
     if args['restore']:
         t = Training.load_checkpoint(args)
