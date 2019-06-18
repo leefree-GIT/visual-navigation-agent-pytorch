@@ -114,7 +114,11 @@ class TrainingThread(mp.Process):
         return len(self.env.actions)
 
     def _initialize_thread(self):
+        #Disable OMP
         torch.set_num_threads(1)
+        torch.manual_seed(self.init_args['seed'])
+        if self.init_args['cuda']:
+            torch.cuda.manual_seed(self.init_args['seed'])
         h5_file_path = self.init_args.get('h5_file_path')
         self.logger = logging.getLogger('agent')
         self.logger.setLevel(logging.INFO)
@@ -143,7 +147,7 @@ class TrainingThread(mp.Process):
 
         self.criterion = ActorCriticLoss(entropy_beta)
         self.policy_network = nn.Sequential(
-            SharedNetwork(), SceneSpecificNetwork(self.action_space_size))
+            SharedNetwork(), SceneSpecificNetwork(self.get_action_space_size()))
         self.policy_network = self.policy_network.to(self.device)
         # Initialize the episode
         self._reset_episode()
@@ -309,7 +313,6 @@ class TrainingThread(mp.Process):
         loss = loss.sum()
 
         # loss_value = loss.detach().numpy()
-
         self.optimizer.optimize(loss,
                                 self.policy_network,
                                 self.master_network,
