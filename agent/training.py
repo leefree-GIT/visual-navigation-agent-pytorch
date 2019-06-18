@@ -198,6 +198,9 @@ class Training:
         return training
 
     def initialize(self):
+        torch.manual_seed(self.config['seed'])
+        if self.config['cuda']:
+            torch.cuda.manual_seed(self.config['seed'])
         # Shared network
         self.shared_network = SharedNetwork()
         self.scene_networks = {key: SceneSpecificNetwork(
@@ -249,7 +252,7 @@ class Training:
 
         # If True use resnet to extract feature
         # If False use precomputed one
-        use_resnet = self.config['use_resnet']
+        use_resnet = self.config['resnet']
         print(f"Resnet {use_resnet}")
 
         def _createThread(id, task, i_queue, o_queue, evt, summary_queue, device):

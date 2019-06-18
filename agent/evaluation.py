@@ -66,7 +66,7 @@ class Evaluation:
     def run(self):
         scene_stats = dict()
         resultData = []
-        use_resnet = self.config.get("use_resnet")
+        use_resnet = self.config.get("resnet")
         if use_resnet:
             mp.set_start_method('spawn')
             device = torch.device("cuda")

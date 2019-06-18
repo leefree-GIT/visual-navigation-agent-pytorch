@@ -41,6 +41,12 @@ def populate_config(config, mode='train', checkpoint=True):
     json_dump = json.load(json_file)
     json_file.close()
 
+    compute_param = json_dump['train_param']
+    eval_param = json_dump['eval_param']
+
+    config = {**config, **compute_param}
+    config = {**config, **eval_param}
+
     base_path = os.path.dirname(exp_path) + '/'
     config['base_path'] = base_path
     config['log_path'] = base_path + 'logs'
@@ -56,15 +62,6 @@ def populate_config(config, mode='train', checkpoint=True):
     config['saving_period'] = int(json_dump['saving_period'])
     config['max_t'] = int(json_dump['max_t'])
     config['action_size'] = int(json_dump['action_size'])
-
-    compute_param = json_dump['train_param']
-    config['cuda'] = compute_param['cuda']
-    config['use_resnet'] = compute_param['resnet']
-    config['num_thread'] = compute_param['num_thread']
-
-    eval_param = json_dump['eval_param']
-
-    config['num_episode'] = eval_param['num_episode']
 
     return config
 

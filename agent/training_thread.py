@@ -108,13 +108,16 @@ class TrainingThread(mp.Process):
         return len(self.env.actions)
 
     def _initialize_thread(self):
+        torch.manual_seed(self.init_args['seed'])
+        if self.init_args['cuda']:
+            torch.cuda.manual_seed(self.init_args['seed'])
         h5_file_path = self.init_args.get('h5_file_path')
         self.logger = logging.getLogger('agent')
         self.logger.setLevel(logging.INFO)
         self.init_args['h5_file_path'] = lambda scene: h5_file_path.replace(
             '{scene}', scene)
 
-        if self.init_args['use_resnet']:
+        if self.init_args['resnet']:
             self.env = THORDiscreteEnvironmentReal(self.scene,
                                                    input_queue=self.i_queue,
                                                    output_queue=self.o_queue,
