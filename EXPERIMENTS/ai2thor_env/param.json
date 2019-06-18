@@ -157,6 +157,7 @@
     "cuda": true,
     "num_thread": 8,
     "use_resnet": false,
+    "gamme": 0.99,
     "seed": 1993
   },
   "eval_param": {

@@ -33,12 +33,15 @@ class TrainingSaver:
         self.scene_networks = scene_networks
         self.optimizer = optimizer
         self.config = config
+        self.save_count = 0
 
-    def after_optimization(self):
-        iteration = self.optimizer.get_global_step()
-        if iteration*self.config['max_t'] % self.saving_period == 0:
-            print('Saving training session')
-            self.save()
+    def after_optimization(self, id):
+        if id == 0:
+            iteration = self.optimizer.get_global_step()
+            if iteration*self.config['max_t'] >= self.save_count*self.saving_period:
+                print('Saving training session')
+                self.save()
+                self.save_count = self.save_count + 1
 
     def save(self):
         iteration = self.optimizer.get_global_step()*self.config['max_t']

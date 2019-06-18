@@ -336,7 +336,7 @@ class TrainingThread(mp.Process):
                     print(f'Global Step {self.optimizer.get_global_step()}')
 
                 # Trigger save or other
-                self.saver.after_optimization()
+                self.saver.after_optimization(self.id)
                 # pass
             self.stop()
             self.env.stop()
