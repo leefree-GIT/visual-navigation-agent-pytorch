@@ -118,7 +118,7 @@
   "train_param": {
     "cuda": true,
     "num_thread": 8,
-    "resnet": false,
+    "use_resnet": false,
     "seed": 1993
   },
   "eval_param": {

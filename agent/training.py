@@ -256,7 +256,7 @@ class Training:
 
         # If True use resnet to extract feature
         # If False use precomputed one
-        use_resnet = self.config['resnet']
+        use_resnet = self.config['use_resnet']
         print(f"Resnet {use_resnet}")
 
         def _createThread(id, task, i_queue, o_queue, evt, summary_queue, device):

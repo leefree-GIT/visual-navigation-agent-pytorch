@@ -123,7 +123,7 @@ class TrainingThread(mp.Process):
         self.init_args['h5_file_path'] = lambda scene: h5_file_path.replace(
             '{scene}', scene)
 
-        if self.init_args['resnet']:
+        if self.init_args['use_resnet']:
             self.env = THORDiscreteEnvironmentReal(self.scene,
                                                    input_queue=self.i_queue,
                                                    output_queue=self.o_queue,
