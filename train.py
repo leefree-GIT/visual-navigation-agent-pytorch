@@ -37,6 +37,8 @@ if __name__ == '__main__':
 
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+    # Disable OMP
+    torch.set_num_threads(1)
 
     args = vars(parser.parse_args())
     args = populate_config(args)

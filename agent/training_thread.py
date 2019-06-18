@@ -114,6 +114,8 @@ class TrainingThread(mp.Process):
         return len(self.env.actions)
 
     def _initialize_thread(self):
+        #Disable OMP
+        torch.set_num_threads(1)
         torch.manual_seed(self.init_args['seed'])
         if self.init_args['cuda']:
             torch.cuda.manual_seed(self.init_args['seed'])
