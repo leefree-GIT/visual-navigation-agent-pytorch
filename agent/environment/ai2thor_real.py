@@ -23,6 +23,7 @@ class THORDiscreteEnvironment(Environment):
             # Bathrooms:      FloorPLan401 - FloorPlan430
             # FloorPlan1
     '''
+    acts = ["MoveAhead", "RotateRight", "RotateLeft", "MoveBack"]
 
     def __init__(self,
                  name="FloorPlan1",
@@ -158,7 +159,7 @@ class THORDiscreteEnvironment(Environment):
 
     @property
     def actions(self):
-        return ["MoveAhead", "RotateRight", "RotateLeft", "MoveBack"]
+        return self.acts
 
     @property
     def is_terminal(self):

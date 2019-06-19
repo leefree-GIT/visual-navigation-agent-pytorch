@@ -9,6 +9,10 @@ from agent.environment.environment import Environment
 
 
 class THORDiscreteEnvironment(Environment):
+
+    acts = ["MoveAhead", "RotateRight", "RotateLeft", "MoveBack",
+            "LookUp", "LookDown", "MoveRight", "MoveLeft"]
+
     def __init__(self,
                  scene_name='FloorPlan1',
                  resnet_trained=None,
@@ -225,9 +229,7 @@ class THORDiscreteEnvironment(Environment):
 
     @property
     def actions(self):
-        acts = ["MoveAhead", "RotateRight", "RotateLeft", "MoveBack",
-                "LookUp", "LookDown", "MoveRight", "MoveLeft"]
-        return acts[: self.action_size]
+        return self.acts[: self.action_size]
 
     def stop(self):
         pass
