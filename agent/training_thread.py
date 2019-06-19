@@ -114,7 +114,7 @@ class TrainingThread(mp.Process):
         return len(self.env.actions)
 
     def _initialize_thread(self):
-        #Disable OMP
+        # Disable OMP
         torch.set_num_threads(1)
         torch.manual_seed(self.init_args['seed'])
         if self.init_args['cuda']:
@@ -149,11 +149,14 @@ class TrainingThread(mp.Process):
         self.policy_network = nn.Sequential(
             SharedNetwork(), SceneSpecificNetwork(self.get_action_space_size()))
         self.policy_network = self.policy_network.to(self.device)
+        # Store action for each episode
+        self.saved_actions = []
         # Initialize the episode
         self._reset_episode()
         self._sync_network()
 
     def _reset_episode(self):
+        self.saved_actions = []
         self.episode_reward = 0
         self.episode_length = 0
         self.episode_max_q = torch.FloatTensor([-np.inf]).to(self.device)
@@ -201,6 +204,9 @@ class TrainingThread(mp.Process):
 
             # Makes the step in the environment
             self.env.step(action)
+
+            # Save action for this episode
+            self.saved_actions.append(action)
 
             # Receives the game reward
             is_terminal = self.env.is_terminal
@@ -254,6 +260,11 @@ class TrainingThread(mp.Process):
                     (scene_log + '/reward', float(self.episode_reward), step))
                 self.summary_queue.put(
                     (scene_log + '/learning_rate', float(self.optimizer.scheduler.get_lr()[0]), step))
+
+                hist_action, _ = np.histogram(
+                    self.saved_actions, bins=self.action_space_size, density=False)
+                self.summary_queue.put(
+                    (scene_log + '/actions', hist_action, step))
 
                 terminal_end = True
                 self._reset_episode()

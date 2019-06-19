@@ -181,7 +181,7 @@ class Evaluation:
                     for a in ep_actions[index_median]:
                         cv2.imshow('Eval', env.observation)
                         env.step(a)
-                        cv2.waitKey(0)
+                        cv2.waitKey(1000)
         print('\nResults (average trajectory length):')
         for scene_scope in scene_stats:
             print('%s: %.2f steps' %

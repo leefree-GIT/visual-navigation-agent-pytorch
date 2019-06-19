@@ -10,6 +10,10 @@ import torch
 import torch.multiprocessing as mp
 import torch.nn as nn
 
+from agent.environment.ai2thor_file import \
+    THORDiscreteEnvironment as THORDiscreteEnvironmentFile
+from agent.environment.ai2thor_real import \
+    THORDiscreteEnvironment as THORDiscreteEnvironmentReal
 from agent.gpu_thread import GPUThread
 from agent.network import SceneSpecificNetwork, SharedNetwork, SharedResnet
 from agent.optim import SharedRMSprop
@@ -318,7 +322,16 @@ class Training:
             output_queues.append(output_queue)
 
         # Create a summary thread to log
-        self.summary = SummaryThread(self.config['log_path'], summary_queue)
+        if use_resnet:
+            actions = THORDiscreteEnvironmentReal.acts[:self.config['action_size']]
+            self.summary = SummaryThread(
+                self.config['log_path'], summary_queue, actions)
+            del actions
+        else:
+            actions = THORDiscreteEnvironmentFile.acts[:self.config['action_size']]
+            self.summary = SummaryThread(
+                self.config['log_path'], summary_queue, actions)
+            del actions
 
         # Create GPUThread to handle feature computation
         if use_resnet:

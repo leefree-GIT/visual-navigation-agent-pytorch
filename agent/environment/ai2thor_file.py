@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import json
 import random
 
 import h5py
@@ -8,6 +9,10 @@ from agent.environment.environment import Environment
 
 
 class THORDiscreteEnvironment(Environment):
+
+    acts = ["MoveAhead", "RotateRight", "RotateLeft", "MoveBack",
+            "LookUp", "LookDown", "MoveRight", "MoveLeft"]
+
     def __init__(self,
                  scene_name='FloorPlan1',
                  resnet_trained=None,
@@ -140,10 +145,6 @@ class THORDiscreteEnvironment(Environment):
     def observation(self):
         return self.h5_file['observation'][self.current_state_id]
 
-    @property
-    def boudingbox(self):
-        return self.h5_file['bbox'][self.current_state_id]
-
     def render(self, mode):
         assert mode == 'resnet_features'
         return self.s_t
@@ -154,9 +155,7 @@ class THORDiscreteEnvironment(Environment):
 
     @property
     def actions(self):
-        acts = ["MoveAhead", "RotateRight", "RotateLeft", "MoveBack",
-                "LookUp", "LookDown", "MoveRight", "MoveLeft"]
-        return acts[:self.action_size]
+        return self.acts[: self.action_size]
 
     def stop(self):
         pass
