@@ -4,6 +4,7 @@ import imp
 from itertools import groupby
 
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.multiprocessing as mp
@@ -85,6 +86,7 @@ class Evaluation:
             gpu_thread.start()
         for scene_scope, items in self.config['task_list'].items():
             scene_net = self.scene_nets[scene_scope]
+            scene_net.eval()
             scene_stats[scene_scope] = list()
             for task_scope in items:
                 if use_resnet:
@@ -179,7 +181,8 @@ class Evaluation:
                     # Set start position
                     env.current_state_id = state_id_best
                     for a in ep_actions[index_median]:
-                        cv2.imshow('Eval', env.observation)
+                        img = cv2.cvtColor(env.observation, cv2.COLOR_BGR2RGB)
+                        cv2.imshow('Eval', img)
                         env.step(a)
                         cv2.waitKey(1000)
         print('\nResults (average trajectory length):')

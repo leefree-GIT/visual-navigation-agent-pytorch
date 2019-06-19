@@ -250,7 +250,8 @@ class TrainingThread(mp.Process):
                 print(
                     f'episode max_q: {self.episode_max_q.detach().cpu().numpy()[0]}')
 
-                scene_log = self.scene + '-' + str(self.id)
+                scene_log = self.scene + '-' + \
+                    str(self.init_args['terminal_state']['object'])
                 step = self.optimizer.get_global_step() * self.max_t
 
                 # Send info to logger thread
