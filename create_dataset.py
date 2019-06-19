@@ -7,7 +7,6 @@ import ai2thor.controller
 import h5py
 import numpy as np
 from keras.applications import resnet50
-from PIL import Image
 from tqdm import tqdm
 
 names = ["FloorPlan1", "FloorPlan2", "FloorPlan201", "FloorPlan202",
@@ -62,25 +61,14 @@ if __name__ == '__main__':
     pbar_names = tqdm(names)
     for name in pbar_names:
         pbar_names.set_description("%s" % name)
-        h5_file = h5py.File("data/" + name + '.h5', 'w')
-
-        import glob
-        object_id = 0
-        object_ids = {}
-        object_feature = []
-
-        for filepath in glob.glob('data/objects/*.jpg'):
-            frame = Image.open(filepath)
-            frame = frame.resize((w, h))
-            frame = np.asarray(frame, dtype="int32")
-            obj_process = resnet50.preprocess_input(frame)
-            obj_process = obj_process[np.newaxis, ...]
-
-            feature = resnet_trained.predict(obj_process)
-
-            filename = os.path.splitext(os.path.basename(filepath))[0]
-            object_ids[filename] = object_id
-            object_feature.append(feature)
+        if args['eval']:
+            if not os.path.exists("data_eval/"):
+                os.makedirs("data_eval/")
+            h5_file = h5py.File("data_eval/" + name + '.h5', 'a')
+        else:
+            if not os.path.exists("data/"):
+                os.makedirs("data/")
+            h5_file = h5py.File("data/" + name + '.h5', 'a')
 
         # Reset the environnment
         controller.reset(name)
