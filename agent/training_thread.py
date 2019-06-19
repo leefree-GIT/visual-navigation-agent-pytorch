@@ -239,7 +239,7 @@ class TrainingThread(mp.Process):
             if is_terminal:
                 # TODO: add logging
                 print(
-                    f"time {self.optimizer.get_global_step() * self.max_t} | thread #{self.id} | scene {self.scene} | target #{self.env.terminal_state['id']}")
+                    f"time {self.optimizer.get_global_step() * self.max_t} | thread #{self.id} | scene {self.scene} | target #{self.env.terminal_state['object']}")
 
                 print('playout finished')
                 print(f'episode length: {self.episode_length}')
