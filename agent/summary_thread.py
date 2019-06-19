@@ -1,3 +1,4 @@
+import signal
 from queue import Empty
 
 import matplotlib.pyplot as plt
@@ -19,6 +20,7 @@ class SummaryThread(mp.Process):
 
     def run(self):
         print("SummaryThread starting")
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
         self.writer = SummaryWriter(self.name)
         while True and not self.exit.is_set():
             try:
