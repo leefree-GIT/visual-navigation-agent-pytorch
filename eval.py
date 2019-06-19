@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 import argparse
 import multiprocessing as mp
+import sys
+
 import torch
 
 from agent.evaluation import Evaluation
 from agent.utils import populate_config
-
-import sys
 
 
 class Logger(object):
@@ -34,6 +34,7 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoint_path', type=str, default=None)
     parser.add_argument('--csv_file', type=str, default=None)
     parser.add_argument('--log_arg', type=int, default=0)
+    parser.add_argument('--show', action='store_true')
 
     # Use experiment.json
     parser.add_argument('--exp', '-e', type=str,
@@ -49,4 +50,4 @@ if __name__ == '__main__':
                         str(args['log_arg']) + '.log')
 
     t = Evaluation.load_checkpoint(args)
-    t.run()
+    t.run(args['show'])

@@ -8,3 +8,4 @@ torchvision
 keras
 tqdm
 gputil
+opencv-python
