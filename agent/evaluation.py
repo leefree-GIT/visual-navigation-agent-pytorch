@@ -3,6 +3,7 @@
 import imp
 from itertools import groupby
 
+import cv2
 import numpy as np
 import torch
 import torch.multiprocessing as mp
@@ -63,7 +64,7 @@ class Evaluation:
         saver.restore(state)
         return evaluation
 
-    def run(self):
+    def run(self, show=False):
         scene_stats = dict()
         resultData = []
         use_resnet = self.config.get("resnet")
@@ -111,12 +112,16 @@ class Evaluation:
                 ep_rewards = []
                 ep_lengths = []
                 ep_collisions = []
+                ep_actions = []
+                ep_start = []
                 for i_episode in range(self.config['num_episode']):
                     env.reset()
                     terminal = False
                     ep_reward = 0
                     ep_collision = 0
                     ep_t = 0
+                    actions = []
+                    ep_start.append(env.current_state_id)
                     while not terminal:
                         state = torch.Tensor(
                             env.render(mode='resnet_features'))
@@ -130,6 +135,7 @@ class Evaluation:
                                 1).data.numpy()[0]
 
                         env.step(action)
+                        actions.append(action)
                         terminal = env.terminal
 
                         if ep_t == 5000:
@@ -139,6 +145,7 @@ class Evaluation:
                         ep_reward += env.reward
                         ep_t += 1
 
+                    ep_actions.append(actions)
                     ep_lengths.append(ep_t)
                     ep_rewards.append(ep_reward)
                     ep_collisions.append(ep_collision)
@@ -154,6 +161,27 @@ class Evaluation:
                 resultData.append((scene_scope, str(task_scope), np.mean(
                     ep_rewards), np.mean(ep_lengths), np.mean(ep_collisions),))
 
+                # Show best episode from evaluation
+                if show:
+                    # Find best episode based on episode length
+                    sorted_ep_lengths = np.sort(ep_lengths)
+
+                    # Median is half the array size
+                    index_median = np.where(
+                        ep_lengths == sorted_ep_lengths[len(sorted_ep_lengths)//2])
+                    # Extract index
+                    index_median = index_median[0][0]
+
+                    # Retrieve start position
+                    state_id_best = ep_start[index_median]
+                    env.reset()
+
+                    # Set start position
+                    env.current_state_id = state_id_best
+                    for a in ep_actions[index_median]:
+                        cv2.imshow('Eval', env.observation)
+                        env.step(a)
+                        cv2.waitKey(0)
         print('\nResults (average trajectory length):')
         for scene_scope in scene_stats:
             print('%s: %.2f steps' %
