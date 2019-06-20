@@ -17,6 +17,7 @@ class SummaryThread(mp.Process):
         self.exit = mp.Event()
         self.actions = actions
         self.dict_hist = dict()
+        self.dict_hist_count = dict()
 
     def run(self):
         print("SummaryThread starting")
@@ -28,6 +29,14 @@ class SummaryThread(mp.Process):
 
                 # Plot histogram of actions
                 if name.split('/')[1] == "actions":
+                    # Save only 100 histo action
+                    if self.dict_hist_count.get(name, None) is None:
+                        self.dict_hist_count[name] = 0
+                    else:
+                        self.dict_hist_count[name] = self.dict_hist_count[name] + 1
+                    if self.dict_hist_count.get(name) % 100 != 0:
+                        continue
+
                     if self.dict_hist.get(name, None) is None:
                         self.dict_hist[name] = scalar
                     else:

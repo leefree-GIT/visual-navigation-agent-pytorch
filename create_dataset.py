@@ -127,10 +127,7 @@ if __name__ == '__main__':
 
         # Reset the environnment
         controller.reset(name)
-        if not args['eval']:
-            controller.step(dict(action='InitialRandomSpawn',
-                                 randomSeed=0, forceVisible=True, maxNumRepeats=5))
-        else:
+        if args['eval']:
             controller.step(dict(action='InitialRandomSpawn',
                                  randomSeed=100, forceVisible=True, maxNumRepeats=5))
 
