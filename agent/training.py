@@ -204,7 +204,7 @@ class Training:
         print(f'Restoring from checkpoint {base_name}')
         state = torch.load(
             open(os.path.join(os.path.dirname(checkpoint_path), base_name), 'rb'))
-        training = Training(state['config'] if 'config' in state else config)
+        training = Training(config)
         training.saver.restore(state)
         return training
 
