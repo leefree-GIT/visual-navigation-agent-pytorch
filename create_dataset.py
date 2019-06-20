@@ -1,11 +1,13 @@
 import argparse
 import json
 import os
+import re
 from collections import namedtuple
 
 import ai2thor.controller
 import h5py
 import numpy as np
+import spacy
 from keras.applications import resnet50
 from PIL import Image
 from tqdm import tqdm
@@ -60,6 +62,44 @@ if __name__ == '__main__':
 
     i = 0
     pbar_names = tqdm(names)
+
+    # Use scapy to extract vector from word embeddings
+    nlp = spacy.load('en_core_web_lg')  # Use en_core_web_lg for more words
+
+    # Use glob to list object image
+    import glob
+    object_id = 0
+    object_ids = {}
+    object_feature = []
+    object_vector = []
+    # List all jpg files in data/objects/
+    for filepath in glob.glob('data/objects/*.jpg'):
+
+        # Resize image to be the same as observation (300x400)
+        frame = Image.open(filepath)
+        frame = frame.resize((w, h))
+        frame = np.asarray(frame, dtype="int32")
+
+        # Use resnet to extract object features
+        obj_process = resnet50.preprocess_input(frame)
+        obj_process = obj_process[np.newaxis, ...]
+        feature = resnet_trained.predict(obj_process)
+
+        filename = os.path.splitext(os.path.basename(filepath))[0]
+        object_ids[filename] = object_id
+        object_feature.append(feature)
+
+        # Usee scapy to extract word embedding vector
+        word_vec = nlp(filename.lower())
+
+        # If words don't exist in dataset
+        # cut them using uppercase letter (SoapBottle -> [Soap, Bottle])
+        if word_vec.vector_norm == 0:
+            word_split = re.findall('[A-Z][^A-Z]*', filename)
+            for word in word_split:
+                word_vec = nlp(word.lower())
+                if word_vec.vector_norm == 0:
+                    break
     for name in pbar_names:
         pbar_names.set_description("%s" % name)
         if args['eval']:
@@ -71,32 +111,25 @@ if __name__ == '__main__':
                 os.makedirs("data/")
             h5_file = h5py.File("data/" + name + '.h5', 'a')
 
-        import glob
-        object_id = 0
-        object_ids = {}
-        object_feature = []
-
-        for filepath in glob.glob('data/objects/*.jpg'):
-            frame = Image.open(filepath)
-            frame = frame.resize((w, h))
-            frame = np.asarray(frame, dtype="int32")
-            obj_process = resnet50.preprocess_input(frame)
-            obj_process = obj_process[np.newaxis, ...]
-
-            feature = resnet_trained.predict(obj_process)
-
-            filename = os.path.splitext(os.path.basename(filepath))[0]
-            object_ids[filename] = object_id
-            object_feature.append(feature)
+            norm_word_vec = word_vec.vector / word_vec.vector_norm
+            object_vector.append(norm_word_vec)
 
         if 'object_feature' in h5_file.keys():
             del h5_file['object_feature']
         h5_file.create_dataset(
             'object_feature', data=object_feature)
 
+        if 'object_vector' in h5_file.keys():
+            del h5_file['object_vector']
+        h5_file.create_dataset(
+            'object_vector', data=object_vector)
+
         # Reset the environnment
         controller.reset(name)
-        if args['eval']:
+        if not args['eval']:
+            controller.step(dict(action='InitialRandomSpawn',
+                                 randomSeed=0, forceVisible=True, maxNumRepeats=5))
+        else:
             controller.step(dict(action='InitialRandomSpawn',
                                  randomSeed=100, forceVisible=True, maxNumRepeats=5))
 
