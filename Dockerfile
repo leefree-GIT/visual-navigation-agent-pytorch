@@ -1,7 +1,7 @@
 FROM pytorch/pytorch:1.1.0-cuda10.0-cudnn7.5-runtime
 
 
-RUN apt-get update && apt-get -y install wget unzip
+RUN apt-get update && apt-get -y install wget unzip libglib2.0 python-opencv
 
 WORKDIR /app/data
 
