@@ -100,6 +100,12 @@ if __name__ == '__main__':
                 word_vec = nlp(word.lower())
                 if word_vec.vector_norm == 0:
                     break
+
+        norm_word_vec = word_vec.vector / word_vec.vector_norm  # Normalize vector size
+        norm_word_vec = (norm_word_vec -
+                         np.min(norm_word_vec)) / np.max(norm_word_vec)  # Normalize between 0 and 1
+        object_vector.append(norm_word_vec)
+
     for name in pbar_names:
         pbar_names.set_description("%s" % name)
         if args['eval']:
@@ -110,9 +116,6 @@ if __name__ == '__main__':
             if not os.path.exists("data/"):
                 os.makedirs("data/")
             h5_file = h5py.File("data/" + name + '.h5', 'a')
-
-            norm_word_vec = word_vec.vector / word_vec.vector_norm
-            object_vector.append(norm_word_vec)
 
         if 'object_feature' in h5_file.keys():
             del h5_file['object_feature']
