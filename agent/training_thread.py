@@ -176,7 +176,7 @@ class TrainingThread(mp.Process):
             # Resnet feature are extracted or computed here
             state = {
                 "current": self.env.render('resnet_features'),
-                "goal": self.env.render_target('resnet_features'),
+                "goal": self.env.render_target('word_features'),
                 "object_mask": self.env.render_mask()
             }
 
@@ -278,7 +278,7 @@ class TrainingThread(mp.Process):
         else:
             x_processed = torch.from_numpy(self.env.render('resnet_features'))
             goal_processed = torch.from_numpy(
-                self.env.render_target('resnet_features'))
+                self.env.render_target('word_features'))
             object_mask = torch.from_numpy(self.env.render_mask())
 
             x_processed = x_processed.to(self.device)

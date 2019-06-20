@@ -64,6 +64,7 @@ class THORDiscreteEnvironment(Environment):
 
         object_ids = json.loads(self.h5_file.attrs['object_ids'])
         object_feature = self.h5_file['object_feature']
+        object_vector = self.h5_file['object_vector']
 
         self.bbox_area = 0
         self.max_bbox_area = 0
@@ -78,7 +79,7 @@ class THORDiscreteEnvironment(Environment):
         #             terminal_id = i
         #             break
         # self.s_target = self._tiled_state(terminal_id)
-        self.s_target = object_feature[object_ids[self.terminal_state['object']]]
+        self.s_target = object_vector[object_ids[self.terminal_state['object']]]
 
         self.mask_size = mask_size
 
@@ -203,7 +204,7 @@ class THORDiscreteEnvironment(Environment):
         return self.s_t
 
     def render_target(self, mode):
-        assert mode == 'resnet_features'
+        assert mode == 'word_features'
         return self.s_target
 
     def render_mask(self):

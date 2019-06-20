@@ -102,8 +102,6 @@ if __name__ == '__main__':
                     break
 
         norm_word_vec = word_vec.vector / word_vec.vector_norm  # Normalize vector size
-        norm_word_vec = (norm_word_vec -
-                         np.min(norm_word_vec)) / np.max(norm_word_vec)  # Normalize between 0 and 1
         object_vector.append(norm_word_vec)
 
     for name in pbar_names:

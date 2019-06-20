@@ -66,14 +66,15 @@ class SharedNetwork(nn.Module):
     def __init__(self, mask_size=5):
         super(SharedNetwork, self).__init__()
 
-        # Target object layer
-        self.fc_target = nn.Linear(2048, 512)
-
+        self.word_embedding_size = 300
+        self.fc_target = nn.Linear(
+            self.word_embedding_size, self.word_embedding_size)
         # Observation layer
         self.fc_observation = nn.Linear(8192, 512)
 
         # Merge layer
-        self.fc_merge = nn.Linear(1024+(mask_size*mask_size), 512)
+        self.fc_merge = nn.Linear(
+            512+self.word_embedding_size+(mask_size*mask_size), 512)
 
     def forward(self, inp):
         # x is the observation
@@ -91,8 +92,8 @@ class SharedNetwork(nn.Module):
 
         z = z.view(-1)
 
-        xy = torch.stack([x, y], 0).view(-1)
-        xyz = torch.cat([xy, z])
+        # xy = torch.stack([x, y], 0).view(-1)
+        xyz = torch.cat([x, y, z])
         xyz = self.fc_merge(xyz)
         xyz = F.relu(xyz, True)
         return xyz
