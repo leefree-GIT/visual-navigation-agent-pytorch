@@ -8,7 +8,7 @@ services:
   train:
     ipc: host
     runtime: nvidia
-    command: "python -u /app/train.py -e /exp/ai2thor_env/param.json"
+    command: "python -u /app/train.py -e /exp/$EXPERIMENT/param.json"
     image: norips/visual-navigation-agent-pytorch
     volumes:
       - ./EXPERIMENTS:/exp
@@ -22,7 +22,7 @@ services:
   train_resnet:
     ipc: host
     runtime: nvidia
-    command: "python -u /app/train.py -e /exp/ai2thor_env/param.json"
+    command: "python -u /app/train.py -e /exp/$EXPERIMENT/param.json"
     image: norips/visual-navigation-agent-pytorch
     volumes:
       - ./EXPERIMENTS:/exp
@@ -36,7 +36,7 @@ services:
   eval:
     ipc: host
     runtime: nvidia
-    command: "python -u /app/eval.py -e /exp/ai2thor_env/param.json"
+    command: "python -u /app/eval.py -e /exp/$EXPERIMENT/param.json"
     image: norips/visual-navigation-agent-pytorch
     volumes:
       - ./EXPERIMENTS:/exp
@@ -50,18 +50,16 @@ services:
   train_restore:
     ipc: host
     runtime: nvidia
+    command: "python -u /app/train.py -e /exp/$EXPERIMENT/param.json --restore"
     image: norips/visual-navigation-agent-pytorch
     volumes:
-      - ./agentmodel:/model
-      - ./runs:/app/runs
+      - ./EXPERIMENTS:/exp
       - ./data:/app/data
     environment:
       - PYTHONUNBUFFERED=1 
       - OMP_NUM_THREADS=1
     depends_on:
       - agent
-    command: "python -u /app/train.py --restore"
-
   bash:
     command: 'bash'
     runtime: nvidia
