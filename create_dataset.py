@@ -60,6 +60,31 @@ if __name__ == '__main__':
 
     i = 0
     pbar_names = tqdm(names)
+
+    # Use glob to list object image
+    import glob
+    object_id = 0
+    object_ids = {}
+    object_feature = []
+    object_vector = []
+    # List all jpg files in data/objects/
+    for filepath in glob.glob('data/objects/*.jpg'):
+
+        # Resize image to be the same as observation (300x400)
+        frame = Image.open(filepath)
+        frame = frame.resize((w, h))
+        frame = np.asarray(frame, dtype="int32")
+
+        # Use resnet to extract object features
+        obj_process = resnet50.preprocess_input(frame)
+        obj_process = obj_process[np.newaxis, ...]
+        feature = resnet_trained.predict(obj_process)
+
+        filename = os.path.splitext(os.path.basename(filepath))[0]
+        object_ids[filename] = object_id
+        object_id = object_id+1
+        object_feature.append(feature)
+
     for name in pbar_names:
         pbar_names.set_description("%s" % name)
         if args['eval']:
@@ -71,28 +96,12 @@ if __name__ == '__main__':
                 os.makedirs("data/")
             h5_file = h5py.File("data/" + name + '.h5', 'a')
 
-        import glob
-        object_id = 0
-        object_ids = {}
-        object_feature = []
-
-        for filepath in glob.glob('data/objects/*.jpg'):
-            frame = Image.open(filepath)
-            frame = frame.resize((w, h))
-            frame = np.asarray(frame, dtype="int32")
-            obj_process = resnet50.preprocess_input(frame)
-            obj_process = obj_process[np.newaxis, ...]
-
-            feature = resnet_trained.predict(obj_process)
-
-            filename = os.path.splitext(os.path.basename(filepath))[0]
-            object_ids[filename] = object_id
-            object_feature.append(feature)
-
         if 'object_feature' in h5_file.keys():
             del h5_file['object_feature']
         h5_file.create_dataset(
             'object_feature', data=object_feature)
+
+        h5_file.attrs["object_ids"] = np.string_(json.dumps(object_ids))
 
         # Reset the environnment
         controller.reset(name)
@@ -220,8 +229,6 @@ if __name__ == '__main__':
 
             h5_file.create_dataset(
                 'graph', data=graph)
-
-        h5_file.attrs["object_ids"] = np.string_(json.dumps(object_ids))
 
         shortest_path_distance = np.ones((num_states, num_states))
         if 'shortest_path_distance' not in h5_file.keys():
