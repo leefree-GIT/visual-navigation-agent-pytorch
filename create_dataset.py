@@ -87,6 +87,7 @@ if __name__ == '__main__':
 
         filename = os.path.splitext(os.path.basename(filepath))[0]
         object_ids[filename] = object_id
+        object_id = object_id+1
         object_feature.append(feature)
 
         # Usee scapy to extract word embedding vector
@@ -106,6 +107,8 @@ if __name__ == '__main__':
 
     for name in pbar_names:
         pbar_names.set_description("%s" % name)
+
+        # Eval dataset
         if args['eval']:
             if not os.path.exists("data_eval/"):
                 os.makedirs("data_eval/")
@@ -115,15 +118,19 @@ if __name__ == '__main__':
                 os.makedirs("data/")
             h5_file = h5py.File("data/" + name + '.h5', 'a')
 
+        # Write object_feature (resnet features)
         if 'object_feature' in h5_file.keys():
             del h5_file['object_feature']
         h5_file.create_dataset(
             'object_feature', data=object_feature)
 
+        # Write object_vector (word embedding features)
         if 'object_vector' in h5_file.keys():
             del h5_file['object_vector']
         h5_file.create_dataset(
             'object_vector', data=object_vector)
+
+        h5_file.attrs["object_ids"] = np.string_(json.dumps(object_ids))
 
         # Reset the environnment
         controller.reset(name)
@@ -251,8 +258,6 @@ if __name__ == '__main__':
 
             h5_file.create_dataset(
                 'graph', data=graph)
-
-        h5_file.attrs["object_ids"] = np.string_(json.dumps(object_ids))
 
         shortest_path_distance = np.ones((num_states, num_states))
         if 'shortest_path_distance' not in h5_file.keys():
