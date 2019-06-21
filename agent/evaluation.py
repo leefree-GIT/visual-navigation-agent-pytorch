@@ -4,7 +4,6 @@ import imp
 from itertools import groupby
 
 import cv2
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.multiprocessing as mp
@@ -164,9 +163,25 @@ class Evaluation:
                     ep_rewards), np.mean(ep_lengths), np.mean(ep_collisions),))
 
                 # Show best episode from evaluation
+                # We will print the best (lowest step), median, and worst
                 if show:
-                    # Find best episode based on episode length
+                    # Find episode based on episode length
                     sorted_ep_lengths = np.sort(ep_lengths)
+
+                    # Best is the first episode in the sorted list but we want more than 10 step
+                    index_best = 0
+                    for idx, ep_len in enumerate(sorted_ep_lengths):
+                        if ep_len >= 10:
+                            index_best = idx
+                            break
+                    index_best = np.where(
+                        ep_lengths == sorted_ep_lengths[index_best])
+                    index_best = index_best[0][0]
+
+                    # Worst is the last episode in the sorted list
+                    index_worst = np.where(
+                        ep_lengths == sorted_ep_lengths[-1])
+                    index_worst = index_worst[0][0]
 
                     # Median is half the array size
                     index_median = np.where(
@@ -174,17 +189,34 @@ class Evaluation:
                     # Extract index
                     index_median = index_median[0][0]
 
-                    # Retrieve start position
-                    state_id_best = ep_start[index_median]
-                    env.reset()
+                    names_video = ['best', 'median', 'worst']
 
-                    # Set start position
-                    env.current_state_id = state_id_best
-                    for a in ep_actions[index_median]:
-                        img = cv2.cvtColor(env.observation, cv2.COLOR_BGR2RGB)
-                        cv2.imshow('Eval', img)
-                        env.step(a)
-                        cv2.waitKey(1000)
+                    for idx_name, idx in enumerate([index_best, index_median, index_worst]):
+                        # Create video to save
+                        height, width, layers = np.shape(env.observation)
+                        video_name = self.config['base_path'] + scene_scope + '_' + \
+                            task_scope['object'] + '_' + \
+                            names_video[idx_name] + '_' + \
+                            str(ep_lengths[idx]) + '.avi'
+                        FPS = 5
+                        video = cv2.VideoWriter(
+                            video_name, cv2.VideoWriter_fourcc(*"MJPG"), FPS, (width, height))
+                        # Retrieve start position
+                        state_id_best = ep_start[idx]
+                        env.reset()
+
+                        # Set start position
+                        env.current_state_id = state_id_best
+                        for a in ep_actions[idx]:
+                            img = cv2.cvtColor(
+                                env.observation, cv2.COLOR_BGR2RGB)
+                            video.write(img)
+                            env.step(a)
+                        img = cv2.cvtColor(
+                            env.observation, cv2.COLOR_BGR2RGB)
+                        for i in range(10):
+                            video.write(img)
+                        video.release()
         print('\nResults (average trajectory length):')
         for scene_scope in scene_stats:
             print('%s: %.2f steps' %
