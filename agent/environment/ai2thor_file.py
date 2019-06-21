@@ -22,6 +22,7 @@ class THORDiscreteEnvironment(Environment):
                  h5_file_path=None,
                  action_size: int = 4,
                  mask_size: int = 5,
+                 reward: str = 'bbox',
                  **kwargs):
         """THORDiscreteEnvironment constructor, it represent a world where an agent evolves
 
@@ -61,6 +62,8 @@ class THORDiscreteEnvironment(Environment):
         self.transition_graph = self.h5_file['graph'][()]
 
         self.action_size = action_size
+
+        self.reward_fun = reward
 
         object_ids = json.loads(self.h5_file.attrs['object_ids'])
         object_feature = self.h5_file['object_feature']
@@ -181,10 +184,14 @@ class THORDiscreteEnvironment(Environment):
 
     @property
     def reward(self):
-        reward_ = self._calculate_reward(self.bbox_area, self.max_bbox_area)
-        if reward_ != 0:
-            self.max_bbox_area = reward_
-        return reward_
+        if self.reward_fun == 'bbox':
+            reward_ = self._calculate_reward(
+                self.bbox_area, self.max_bbox_area)
+            if reward_ != 0:
+                self.max_bbox_area = reward_
+            return reward_
+        elif self.reward_fun == 'step':
+            return 10.0 if self.terminal else -0.01
 
     @property
     def is_terminal(self):
