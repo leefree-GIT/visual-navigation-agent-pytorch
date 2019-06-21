@@ -50,6 +50,7 @@ class SummaryThread(mp.Process):
                     ax.set_xticklabels(self.actions)
                     fig.autofmt_xdate()
                     self.writer.add_figure(name, fig, step)
+                    fig.close()
 
                 else:
                     self.writer.add_scalar(name, scalar, step)
