@@ -197,7 +197,8 @@ class Evaluation:
                         height, width, layers = np.shape(env.observation)
                         video_name = self.config['base_path'] + scene_scope + '_' + \
                             task_scope['object'] + '_' + \
-                            names_video[idx_name] + '.avi'
+                            names_video[idx_name] + '_' + \
+                            str(ep_lengths[idx]) + '.avi'
                         FPS = 5
                         video = cv2.VideoWriter(
                             video_name, cv2.VideoWriter_fourcc(*"MJPG"), FPS, (width, height))
@@ -212,6 +213,10 @@ class Evaluation:
                                 env.observation, cv2.COLOR_BGR2RGB)
                             video.write(img)
                             env.step(a)
+                        img = cv2.cvtColor(
+                            env.observation, cv2.COLOR_BGR2RGB)
+                        for i in range(10):
+                            video.write(img)
                         video.release()
         print('\nResults (average trajectory length):')
         for scene_scope in scene_stats:
