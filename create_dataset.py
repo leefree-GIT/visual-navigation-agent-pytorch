@@ -43,26 +43,168 @@ class NumpyEncoder(json.JSONEncoder):
         return json.JSONEncoder.default(self, obj)
 
 
-if __name__ == '__main__':
-    argparse.ArgumentParser(description="")
-    parser = argparse.ArgumentParser(description='Dataset creation.')
-    parser.add_argument('--eval', action='store_true')
-    args = vars(parser.parse_args())
-    controller = ai2thor.controller.Controller()
+def extract_object(bboxs, set_object_names):
+    for key, value in bboxs.items():
+        keys = key.split('|')
+        set_object_names.add(keys[0])
+    return set_object_names
 
-    w, h = 400, 300
-    controller.start(player_screen_width=w, player_screen_height=h)
 
-    # Use resnet from Keras to compute features
-    resnet_trained = resnet50.ResNet50(
-        include_top=False, weights='imagenet', pooling='avg', input_shape=(h, w, 3))
-    # Freeze all layers
-    for layer in resnet_trained.layers:
-        layer.trainable = False
+def create_states(h5_file, resnet_trained, controller, name, args, object_names):
+    # Reset the environnment
+    controller.reset(name)
+    if args['eval']:
+        controller.step(dict(action='InitialRandomSpawn',
+                             randomSeed=100, forceVisible=True, maxNumRepeats=5))
 
-    i = 0
-    pbar_names = tqdm(names)
+    # gridSize specifies the coarseness of the grid that the agent navigates on
+    state = controller.step(
+        dict(action='Initialize', gridSize=grid_size, renderObjectImage=True))
 
+    reachable_pos = controller.step(dict(
+        action='GetReachablePositions', gridSize=grid_size)).metadata['reachablePositions']
+
+    states = []
+    obss = []
+    idx = 0
+    StateStruct = namedtuple("StateStruct", "id pos rot obs feat bbox")
+    # Does not redo if already existing
+    if 'resnet_feature' not in h5_file.keys() or \
+        'observation' not in h5_file.keys() or \
+        'location' not in h5_file.keys() or \
+        'rotation' not in h5_file.keys() or \
+            'bbox' not in h5_file.keys():
+        for pos in tqdm(reachable_pos, desc="Feature extraction"):
+            state = controller.step(dict(action='Teleport', **pos))
+            # Normal/Up/Down view
+            for i in range(3):
+                # Up view
+                if i == 1:
+                    state = controller.step(dict(action="LookUp"))
+                # Down view
+                elif i == 2:
+                    state = controller.step(dict(action="LookDown"))
+                # Rotate
+                for a in range(rotation_possible_inplace):
+                    state = controller.step(dict(action="RotateLeft"))
+                    state.metadata['agent']['rotation']['z'] = state.metadata['agent']['cameraHorizon']
+                    obs_process = resnet50.preprocess_input(state.frame)
+                    obs_process = obs_process[np.newaxis, ...]
+
+                    # Extract resnet feature from observation
+                    feature = resnet_trained.predict(obs_process)
+
+                    state_struct = StateStruct(
+                        idx,
+                        state.metadata['agent']['position'],
+                        state.metadata['agent']['rotation'],
+                        obs=state.frame,
+                        feat=feature,
+                        bbox=json.dumps(state.instance_detections2D, cls=NumpyEncoder))
+
+                    object_names = extract_object(
+                        state.instance_detections2D, object_names)
+
+                    if search_namedtuple(states, state_struct):
+                        print("Already exists")
+                        exit()
+
+                    states.append(state_struct)
+                    idx = idx + 1
+
+                # Reset camera
+                if i == 1:
+                    state = controller.step(dict(action="LookDown"))
+                elif i == 2:
+                    state = controller.step(dict(action="LookUp"))
+
+        # Save it to h5 file
+        if 'resnet_feature' in h5_file.keys():
+            del h5_file['resnet_feature']
+        h5_file.create_dataset(
+            'resnet_feature', data=[s.feat for s in states])
+
+        if 'observation' in h5_file.keys():
+            del h5_file['observation']
+        h5_file.create_dataset(
+            'observation', data=[s.obs for s in states])
+
+        if 'location' in h5_file.keys():
+            del h5_file['location']
+        h5_file.create_dataset(
+            'location', data=[list(s.pos.values()) for s in states])
+
+        if 'rotation' in h5_file.keys():
+            del h5_file['rotation']
+        h5_file.create_dataset(
+            'rotation', data=[list(s.rot.values()) for s in states])
+
+        if 'bbox' in h5_file.keys():
+            del h5_file['bbox']
+        h5_file.create_dataset(
+            'bbox', data=[s.bbox.encode("ascii", "ignore") for s in states])
+    return states, object_names
+
+
+def create_graph(h5_file, states, controller):
+    num_states = len(states)
+    graph = np.full((num_states, ACTION_SIZE), -1)
+    StateStruct = namedtuple("StateStruct", "id pos rot obs feat bbox")
+    # Speed improvement
+    state = controller.step(
+        dict(action='Initialize', gridSize=grid_size, renderObjectImage=False))
+    # Populate graph
+    if 'graph' not in h5_file.keys():
+        for state in tqdm(states, desc="Graph construction"):
+            for i, a in enumerate(actions):
+                controller.step(dict(action='TeleportFull', **state.pos,
+                                     rotation=state.rot['y'], horizon=state.rot['z']))
+                state_controller = controller.step(dict(action=a))
+                state_controller.metadata['agent']['rotation']['z'] = state_controller.metadata['agent']['cameraHorizon']
+                # Convert to search
+                state_controller_named = StateStruct(-1,
+                                                     state_controller.metadata['agent']['position'],
+                                                     state_controller.metadata['agent']['rotation'],
+                                                     obs=None,
+                                                     feat=None,
+                                                     bbox=None)
+
+                if not equal(state, state_controller_named) and not round(state_controller.metadata['agent']['cameraHorizon']) == 60:
+                    found = search_namedtuple(
+                        states, state_controller_named)
+                    if found is None:
+                        # print(state_controller_named)
+                        # print("Error, state not found")
+                        # exit()
+                        continue
+                    graph[state.id][i] = found.id
+
+        h5_file.create_dataset(
+            'graph', data=graph)
+
+    shortest_path_distance = np.ones((num_states, num_states))
+    if 'shortest_path_distance' not in h5_file.keys():
+        h5_file.create_dataset('shortest_path_distance',
+                               data=shortest_path_distance)
+
+
+def write_object_feature(h5_file, object_ids, object_feature, object_vector):
+    # Write object_feature (resnet features)
+    if 'object_feature' in h5_file.keys():
+        del h5_file['object_feature']
+    h5_file.create_dataset(
+        'object_feature', data=object_feature)
+
+    # Write object_vector (word embedding features)
+    if 'object_vector' in h5_file.keys():
+        del h5_file['object_vector']
+    h5_file.create_dataset(
+        'object_vector', data=object_vector)
+
+    h5_file.attrs["object_ids"] = np.string_(json.dumps(object_ids))
+
+
+def extract_object_feature(resnet_trained, h, w):
     # Use scapy to extract vector from word embeddings
     nlp = spacy.load('en_core_web_lg')  # Use en_core_web_lg for more words
 
@@ -94,16 +236,49 @@ if __name__ == '__main__':
         word_vec = nlp(filename.lower())
 
         # If words don't exist in dataset
-        # cut them using uppercase letter (SoapBottle -> [Soap, Bottle])
+        # cut them using uppercase letter (SoapBottle -> Soap Bottle)
         if word_vec.vector_norm == 0:
-            word_split = re.findall('[A-Z][^A-Z]*', filename)
-            for word in word_split:
-                word_vec = nlp(word.lower())
-                if word_vec.vector_norm == 0:
-                    break
+            word = re.sub(r"(?<=\w)([A-Z])", r" \1", filename)
+            word_vec = nlp(word.lower())
 
+            # If no embedding found try to cut word to find embedding (SoapBottle -> [Soap, Bottle])
+            if word_vec.vector_norm == 0:
+                word_split = re.findall('[A-Z][^A-Z]*', filename)
+                for word in word_split:
+                    word_vec = nlp(word.lower())
+                    if word_vec.has_vector:
+                        break
+                if word_vec.vector_norm == 0:
+                    print('ERROR vec not found')
+                    break
         norm_word_vec = word_vec.vector / word_vec.vector_norm  # Normalize vector size
         object_vector.append(norm_word_vec)
+    return object_ids, object_feature, object_vector
+
+
+def main():
+    argparse.ArgumentParser(description="")
+    parser = argparse.ArgumentParser(description='Dataset creation.')
+    parser.add_argument('--eval', action='store_true')
+    args = vars(parser.parse_args())
+    controller = ai2thor.controller.Controller()
+
+    w, h = 400, 300
+    controller.start(player_screen_width=w, player_screen_height=h)
+
+    # Use resnet from Keras to compute features
+    resnet_trained = resnet50.ResNet50(
+        include_top=False, weights='imagenet', pooling='avg', input_shape=(h, w, 3))
+    # Freeze all layers
+    for layer in resnet_trained.layers:
+        layer.trainable = False
+
+    pbar_names = tqdm(names)
+
+    object_ids, object_feature, object_vector = extract_object_feature(
+        resnet_trained, h, w)
+
+    object_names = set()
 
     for name in pbar_names:
         pbar_names.set_description("%s" % name)
@@ -118,149 +293,19 @@ if __name__ == '__main__':
                 os.makedirs("data/")
             h5_file = h5py.File("data/" + name + '.h5', 'a')
 
-        # Write object_feature (resnet features)
-        if 'object_feature' in h5_file.keys():
-            del h5_file['object_feature']
-        h5_file.create_dataset(
-            'object_feature', data=object_feature)
-
-        # Write object_vector (word embedding features)
-        if 'object_vector' in h5_file.keys():
-            del h5_file['object_vector']
-        h5_file.create_dataset(
-            'object_vector', data=object_vector)
-
-        h5_file.attrs["object_ids"] = np.string_(json.dumps(object_ids))
-
-        # Reset the environnment
-        controller.reset(name)
-        if args['eval']:
-            controller.step(dict(action='InitialRandomSpawn',
-                                 randomSeed=100, forceVisible=True, maxNumRepeats=5))
-
-        # gridSize specifies the coarseness of the grid that the agent navigates on
-        state = controller.step(
-            dict(action='Initialize', gridSize=grid_size, renderObjectImage=True))
-
-        reachable_pos = controller.step(dict(
-            action='GetReachablePositions', gridSize=grid_size)).metadata['reachablePositions']
+        write_object_feature(h5_file, object_ids,
+                             object_feature, object_vector)
 
         # Construct all possible states
-        states = []
-        obss = []
-        StateStruct = namedtuple("StateStruct", "id pos rot obs feat bbox")
-
-        idx = 0
-        if 'resnet_feature' not in h5_file.keys() or \
-           'observation' not in h5_file.keys() or \
-           'location' not in h5_file.keys() or \
-           'rotation' not in h5_file.keys() or \
-           'bbox' not in h5_file.keys():
-            for pos in tqdm(reachable_pos, desc="Feature extraction"):
-                state = controller.step(dict(action='Teleport', **pos))
-                # Normal/Up/Down view
-                for i in range(3):
-                    # Up view
-                    if i == 1:
-                        state = controller.step(dict(action="LookUp"))
-                    # Down view
-                    elif i == 2:
-                        state = controller.step(dict(action="LookDown"))
-                    # Rotate
-                    for a in range(rotation_possible_inplace):
-                        state = controller.step(dict(action="RotateLeft"))
-                        state.metadata['agent']['rotation']['z'] = state.metadata['agent']['cameraHorizon']
-                        obs_process = resnet50.preprocess_input(state.frame)
-                        obs_process = obs_process[np.newaxis, ...]
-
-                        feature = resnet_trained.predict(obs_process)
-
-                        state_struct = StateStruct(
-                            idx,
-                            state.metadata['agent']['position'],
-                            state.metadata['agent']['rotation'],
-                            obs=state.frame,
-                            feat=feature,
-                            bbox=json.dumps(state.instance_detections2D, cls=NumpyEncoder))
-
-                        if search_namedtuple(states, state_struct):
-                            print("Already exists")
-                            exit()
-
-                        states.append(state_struct)
-                        idx = idx + 1
-
-                    # Reset camera
-                    if i == 1:
-                        state = controller.step(dict(action="LookDown"))
-                    elif i == 2:
-                        state = controller.step(dict(action="LookUp"))
-
-            # Save it to h5 file
-            if 'resnet_feature' in h5_file.keys():
-                del h5_file['resnet_feature']
-            h5_file.create_dataset(
-                'resnet_feature', data=[s.feat for s in states])
-
-            if 'observation' in h5_file.keys():
-                del h5_file['observation']
-            h5_file.create_dataset(
-                'observation', data=[s.obs for s in states])
-
-            if 'location' in h5_file.keys():
-                del h5_file['location']
-            h5_file.create_dataset(
-                'location', data=[list(s.pos.values()) for s in states])
-
-            if 'rotation' in h5_file.keys():
-                del h5_file['rotation']
-            h5_file.create_dataset(
-                'rotation', data=[list(s.rot.values()) for s in states])
-
-            if 'bbox' in h5_file.keys():
-                del h5_file['bbox']
-            h5_file.create_dataset(
-                'bbox', data=[s.bbox.encode("ascii", "ignore") for s in states])
+        states, object_names = create_states(h5_file, resnet_trained,
+                                             controller, name, args, object_names)
 
         # Create action-state graph
-        # Each state will be at 1 position and 4 rotation
-        num_states = len(states)
-        graph = np.full((num_states, ACTION_SIZE), -1)
+        create_graph(h5_file, states, controller)
 
-        # Speed improvement
-        state = controller.step(
-            dict(action='Initialize', gridSize=grid_size, renderObjectImage=False))
-        # Populate graph
-        if 'graph' not in h5_file.keys():
-            for state in tqdm(states, desc="Graph construction"):
-                for i, a in enumerate(actions):
-                    controller.step(dict(action='TeleportFull', **state.pos,
-                                         rotation=state.rot['y'], horizon=state.rot['z']))
-                    state_controller = controller.step(dict(action=a))
-                    state_controller.metadata['agent']['rotation']['z'] = state_controller.metadata['agent']['cameraHorizon']
-                    # Convert to search
-                    state_controller_named = StateStruct(-1,
-                                                         state_controller.metadata['agent']['position'],
-                                                         state_controller.metadata['agent']['rotation'],
-                                                         obs=None,
-                                                         feat=None,
-                                                         bbox=None)
-
-                    if not equal(state, state_controller_named) and not round(state_controller.metadata['agent']['cameraHorizon']) == 60:
-                        found = search_namedtuple(
-                            states, state_controller_named)
-                        if found is None:
-                            # print(state_controller_named)
-                            # print("Error, state not found")
-                            # exit()
-                            continue
-                        graph[state.id][i] = found.id
-
-            h5_file.create_dataset(
-                'graph', data=graph)
-
-        shortest_path_distance = np.ones((num_states, num_states))
-        if 'shortest_path_distance' not in h5_file.keys():
-            h5_file.create_dataset('shortest_path_distance',
-                                   data=shortest_path_distance)
         h5_file.close()
+    print(object_names)
+
+
+if __name__ == '__main__':
+    main()
