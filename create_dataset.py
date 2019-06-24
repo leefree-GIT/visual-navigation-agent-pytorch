@@ -12,7 +12,8 @@ from keras.applications import resnet50
 from PIL import Image
 from tqdm import tqdm
 
-names = ["FloorPlan1", "FloorPlan2", "FloorPlan201", "FloorPlan202",
+# "FloorPlan1",
+names = ["FloorPlan2", "FloorPlan201", "FloorPlan202",
          "FloorPlan301", "FloorPlan302", "FloorPlan401", "FloorPlan402"]
 grid_size = 0.5
 
@@ -214,7 +215,8 @@ def create_states(h5_file, resnet_trained, controller, name, args):
     idx = 0
     StateStruct = namedtuple("StateStruct", "id pos rot obs feat bbox")
     # Does not redo if already existing
-    if 'resnet_feature' not in h5_file.keys() or \
+    if args['force'] or \
+        'resnet_feature' not in h5_file.keys() or \
         'observation' not in h5_file.keys() or \
         'location' not in h5_file.keys() or \
         'rotation' not in h5_file.keys() or \
@@ -288,7 +290,7 @@ def create_states(h5_file, resnet_trained, controller, name, args):
     return states
 
 
-def create_graph(h5_file, states, controller):
+def create_graph(h5_file, states, controller, args):
     num_states = len(states)
     graph = np.full((num_states, ACTION_SIZE), -1)
     StateStruct = namedtuple("StateStruct", "id pos rot obs feat bbox")
@@ -296,7 +298,7 @@ def create_graph(h5_file, states, controller):
     state = controller.step(
         dict(action='Initialize', gridSize=grid_size, renderObjectImage=False))
     # Populate graph
-    if 'graph' not in h5_file.keys():
+    if args['force'] or 'graph' not in h5_file.keys():
         for state in tqdm(states, desc="Graph construction"):
             for i, a in enumerate(actions):
                 controller.step(dict(action='TeleportFull', **state.pos,
@@ -320,6 +322,8 @@ def create_graph(h5_file, states, controller):
                         # exit()
                         continue
                     graph[state.id][i] = found.id
+        if 'graph' in h5_file.keys():
+            del h5_file['graph']
 
         h5_file.create_dataset(
             'graph', data=graph)
@@ -378,9 +382,9 @@ def extract_object_feature(resnet_trained, h, w):
     import glob
 
     # 2048 is the resnet feature size
-    object_feature = np.zeros((len(OBJECT_IDS), 2048))
+    object_feature = np.zeros((len(OBJECT_IDS), 2048), dtype=np.float32)
     # 300 is the word embeddings feature size
-    object_vector = np.zeros((len(OBJECT_IDS), 300))
+    object_vector = np.zeros((len(OBJECT_IDS), 300), dtype=np.float32)
     # List all jpg files in data/objects/
     for filepath in glob.glob('data/objects/*.jpg'):
 
@@ -410,6 +414,7 @@ def main():
     argparse.ArgumentParser(description="")
     parser = argparse.ArgumentParser(description='Dataset creation.')
     parser.add_argument('--eval', action='store_true')
+    parser.add_argument('--force', action='store_true')
     args = vars(parser.parse_args())
     controller = ai2thor.controller.Controller()
 
@@ -449,7 +454,7 @@ def main():
                                controller, name, args)
 
         # Create action-state graph
-        create_graph(h5_file, states, controller)
+        create_graph(h5_file, states, controller, args)
 
         h5_file.close()
 

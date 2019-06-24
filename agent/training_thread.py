@@ -125,6 +125,8 @@ class TrainingThread(mp.Process):
         self.init_args['h5_file_path'] = lambda scene: h5_file_path.replace(
             '{scene}', scene)
 
+        self.mask_size = self.init_args.get('mask_size', 5)
+
         if self.init_args['use_resnet']:
             self.env = THORDiscreteEnvironmentReal(self.scene,
                                                    input_queue=self.i_queue,
@@ -146,8 +148,9 @@ class TrainingThread(mp.Process):
         self.action_space_size = self.get_action_space_size()
 
         self.criterion = ActorCriticLoss(entropy_beta)
+
         self.policy_network = nn.Sequential(
-            SharedNetwork(), SceneSpecificNetwork(self.get_action_space_size()))
+            SharedNetwork(self.mask_size), SceneSpecificNetwork(self.get_action_space_size()))
         self.policy_network = self.policy_network.to(self.device)
         # Store action for each episode
         self.saved_actions = []

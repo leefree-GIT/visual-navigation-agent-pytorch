@@ -40,7 +40,7 @@ def export_to_csv(data, file):
 class Evaluation:
     def __init__(self, config):
         self.config = config
-        self.shared_net = SharedNetwork()
+        self.shared_net = SharedNetwork(self.config.get('mask_size', 5))
         self.scene_nets = {key: SceneSpecificNetwork(
             self.config['action_size']) for key in config['task_list'].keys()}
 
@@ -107,7 +107,8 @@ class Evaluation:
                         h5_file_path=(lambda scene: self.config.get(
                             "h5_file_path", "D:\\datasets\\visual_navigation_precomputed\\{scene}.h5").replace('{scene}', scene)),
                         terminal_state=task_scope,
-                        action_size=self.config['action_size']
+                        action_size=self.config['action_size'],
+                        mask_size=self.config.get('mask_size', 5)
                     )
 
                 ep_rewards = []

@@ -4,6 +4,7 @@ import random
 
 import h5py
 import numpy as np
+from scipy import spatial
 
 from agent.environment.environment import Environment
 
@@ -15,7 +16,6 @@ class THORDiscreteEnvironment(Environment):
 
     def __init__(self,
                  scene_name='FloorPlan1',
-                 resnet_trained=None,
                  n_feat_per_location=1,
                  history_length: int = 4,
                  terminal_state=0,
@@ -65,9 +65,9 @@ class THORDiscreteEnvironment(Environment):
 
         self.reward_fun = reward
 
-        object_ids = json.loads(self.h5_file.attrs['object_ids'])
+        self.object_ids = json.loads(self.h5_file.attrs['object_ids'])
         object_feature = self.h5_file['object_feature']
-        object_vector = self.h5_file['object_vector']
+        self.object_vector = self.h5_file['object_vector']
 
         self.bbox_area = 0
         self.max_bbox_area = 0
@@ -82,7 +82,7 @@ class THORDiscreteEnvironment(Environment):
         #             terminal_id = i
         #             break
         # self.s_target = self._tiled_state(terminal_id)
-        self.s_target = object_vector[object_ids[self.terminal_state['object']]]
+        self.s_target = self.object_vector[self.object_ids[self.terminal_state['object']]]
 
         self.mask_size = mask_size
 
@@ -98,7 +98,6 @@ class THORDiscreteEnvironment(Environment):
         self.current_state_id = k
         self.start_state_id = k
         self.s_t = self._tiled_state(self.current_state_id)
-
         self.collided = False
         self.terminal = False
         self.bbox_area = 0
@@ -177,10 +176,11 @@ class THORDiscreteEnvironment(Environment):
         output = np.zeros(output_shape, dtype=np.float32)
 
         for i_bbox in input_bbox:
-            bbox_x, bbox_y = i_bbox
+            bbox_xy, similarity = i_bbox
+            bbox_x, bbox_y = bbox_xy
             out_x = int(ratio_w * bbox_x)
             out_y = int(ratio_h * bbox_y)
-            output[out_x, out_y] = 1
+            output[out_x, out_y] = max(output[out_x, out_y], similarity)
         return output
 
     @property
@@ -221,12 +221,17 @@ class THORDiscreteEnvironment(Environment):
         bbox_location = []
         for key, value in self.boudingbox.items():
             keys = key.split('|')
-            if keys[0] == self.terminal_state['object']:
-                x = value[0] + value[2]
-                x = x/2
-                y = value[1] + value[3]
-                y = y/2
-                bbox_location.append((x, y))
+            # Add bounding box if its the target object
+            # if keys[0] == self.terminal_state['object']:
+            x = value[0] + value[2]
+            x = x/2
+            y = value[1] + value[3]
+            y = y/2
+
+            curr_obj_id = self.object_ids[keys[0]]
+            similarity = 1 - spatial.distance.cosine(
+                self.s_target, self.object_vector[curr_obj_id])
+            bbox_location.append(((x, y), similarity))
         try:
             output = self._downsample_bbox(
                 (h, w), (self.mask_size, self.mask_size), bbox_location)
