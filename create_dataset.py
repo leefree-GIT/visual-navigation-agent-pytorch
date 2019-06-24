@@ -21,6 +21,158 @@ actions = ["MoveAhead", "RotateRight", "RotateLeft",
 rotation_possible_inplace = 4
 ACTION_SIZE = len(actions)
 
+# Extracted from unity/Assets/Scripts/SimObjType.cs
+OBJECT_IDS = {
+    "Undefined": 0,
+    "Apple": 1,
+    "AppleSliced": 2,
+    "Tomato": 3,
+    "TomatoSliced": 4,
+    "Bread": 5,
+    "BreadSliced": 6,
+    "Sink": 7,
+    "Pot": 8,
+    "Pan": 9,
+    "Knife": 10,
+    "Fork": 11,
+    "Spoon": 12,
+    "Bowl": 13,
+    "Toaster": 14,
+    "CoffeeMachine": 15,
+    "Microwave": 16,
+    "StoveBurner": 17,
+    "Fridge": 18,
+    "Cabinet": 19,
+    "Egg": 20,
+    "Chair": 21,
+    "Lettuce": 22,
+    "Potato": 23,
+    "Mug": 24,
+    "Plate": 25,
+    "TableTop": 26,
+    "CounterTop": 27,
+    "GarbageCan": 28,
+    "Omelette": 29,
+    "EggShell": 30,
+    "EggCracked": 31,
+    "StoveKnob": 32,
+    "Container": 33,
+    "Cup": 34,
+    "ButterKnife": 35,
+    "PotatoSliced": 36,
+    "MugFilled": 37,
+    "BowlFilled": 38,
+    "Statue": 39,
+    "LettuceSliced": 40,
+    "ContainerFull": 41,
+    "BowlDirty": 42,
+    "Sandwich": 43,
+    "Television": 44,
+    "HousePlant": 45,
+    "TissueBox": 46,
+    "VacuumCleaner": 47,
+    "Painting": 48,
+    "WateringCan": 49,
+    "Laptop": 50,
+    "RemoteControl": 51,
+    "Box": 52,
+    "Newspaper": 53,
+    "TissueBoxEmpty": 54,
+    "PaintingHanger": 55,
+    "KeyChain": 56,
+    "Dirt": 57,
+    "CellPhone": 58,
+    "CreditCard": 59,
+    "Cloth": 60,
+    "Candle": 61,
+    "Toilet": 62,
+    "Plunger": 63,
+    "Bathtub": 64,
+    "ToiletPaper": 65,
+    "ToiletPaperHanger": 66,
+    "SoapBottle": 67,
+    "SoapBottleFilled": 68,
+    "SoapBar": 69,
+    "ShowerDoor": 70,
+    "SprayBottle": 71,
+    "ScrubBrush": 72,
+    "ToiletPaperRoll": 73,
+    "Lamp": 74,
+    "LightSwitch": 75,
+    "Bed": 76,
+    "Book": 77,
+    "AlarmClock": 78,
+    "SportsEquipment": 79,
+    "Pen": 80,
+    "Pencil": 81,
+    "Blinds": 82,
+    "Mirror": 83,
+    "TowelHolder": 84,
+    "Towel": 85,
+    "Watch": 86,
+    "MiscTableObject": 87,
+    "ArmChair": 88,
+    "BaseballBat": 89,
+    "BasketBall": 90,
+    "Faucet": 91,
+    "Boots": 92,
+    "Glassbottle": 93,
+    "DishSponge": 94,
+    "Drawer": 95,
+    "FloorLamp": 96,
+    "Kettle": 97,
+    "LaundryHamper": 98,
+    "LaundryHamperLid": 99,
+    "Lighter": 100,
+    "Ottoman": 101,
+    "PaintingSmall": 102,
+    "PaintingMedium": 103,
+    "PaintingLarge": 104,
+    "PaintingHangerSmall": 105,
+    "PaintingHangerMedium": 106,
+    "PaintingHangerLarge": 107,
+    "PanLid": 108,
+    "PaperTowelRoll": 109,
+    "PepperShaker": 110,
+    "PotLid": 111,
+    "SaltShaker": 112,
+    "Safe": 113,
+    "SmallMirror": 114,
+    "Sofa": 115,
+    "SoapContainer": 116,
+    "Spatula": 117,
+    "TeddyBear": 118,
+    "TennisRacket": 119,
+    "Tissue": 120,
+    "Vase": 121,
+    "WallMirror": 122,
+    "MassObjectSpawner": 123,
+    "MassScale": 124,
+    "Footstool": 125,
+    "Shelf": 126,
+    "Dresser": 127,
+    "Desk": 128,
+    "NightStand": 129,
+    "Pillow": 130,
+    "Bench": 131,
+    "Cart": 132,
+    "ShowerGlass": 133,
+    "DeskLamp": 134,
+    "Window": 135,
+    "BathtubBasin": 136,
+    "SinkBasin": 137,
+    "CD": 138,
+    "Curtains": 139,
+    "Poster": 140,
+    "HandTowel": 141,
+    "HandTowelHolder": 142,
+    "Ladle": 143,
+    "WineBottle": 144,
+    "ShowerCurtain": 145,
+    "ShowerHead": 146
+
+}
+
 
 def equal(s1, s2):
     if s1.pos == s2.pos:
@@ -43,14 +195,7 @@ class NumpyEncoder(json.JSONEncoder):
         return json.JSONEncoder.default(self, obj)
 
 
-def extract_object(bboxs, set_object_names):
-    for key, value in bboxs.items():
-        keys = key.split('|')
-        set_object_names.add(keys[0])
-    return set_object_names
-
-
-def create_states(h5_file, resnet_trained, controller, name, args, object_names):
+def create_states(h5_file, resnet_trained, controller, name, args):
     # Reset the environnment
     controller.reset(name)
     if args['eval']:
@@ -102,9 +247,6 @@ def create_states(h5_file, resnet_trained, controller, name, args, object_names)
                         feat=feature,
                         bbox=json.dumps(state.instance_detections2D, cls=NumpyEncoder))
 
-                    object_names = extract_object(
-                        state.instance_detections2D, object_names)
-
                     if search_namedtuple(states, state_struct):
                         print("Already exists")
                         exit()
@@ -143,7 +285,7 @@ def create_states(h5_file, resnet_trained, controller, name, args, object_names)
             del h5_file['bbox']
         h5_file.create_dataset(
             'bbox', data=[s.bbox.encode("ascii", "ignore") for s in states])
-    return states, object_names
+    return states
 
 
 def create_graph(h5_file, states, controller):
@@ -188,7 +330,7 @@ def create_graph(h5_file, states, controller):
                                data=shortest_path_distance)
 
 
-def write_object_feature(h5_file, object_ids, object_feature, object_vector):
+def write_object_feature(h5_file, object_feature, object_vector):
     # Write object_feature (resnet features)
     if 'object_feature' in h5_file.keys():
         del h5_file['object_feature']
@@ -201,7 +343,31 @@ def write_object_feature(h5_file, object_ids, object_feature, object_vector):
     h5_file.create_dataset(
         'object_vector', data=object_vector)
 
-    h5_file.attrs["object_ids"] = np.string_(json.dumps(object_ids))
+    h5_file.attrs["object_ids"] = np.string_(json.dumps(OBJECT_IDS))
+
+
+def extract_word_emb_vector(nlp, word_name):
+    # Usee scapy to extract word embedding vector
+    word_vec = nlp(word_name.lower())
+
+    # If words don't exist in dataset
+    # cut them using uppercase letter (SoapBottle -> Soap Bottle)
+    if word_vec.vector_norm == 0:
+        word = re.sub(r"(?<=\w)([A-Z])", r" \1", word_name)
+        word_vec = nlp(word.lower())
+
+        # If no embedding found try to cut word to find embedding (SoapBottle -> [Soap, Bottle])
+        if word_vec.vector_norm == 0:
+            word_split = re.findall('[A-Z][^A-Z]*', word)
+            for word in word_split:
+                word_vec = nlp(word.lower())
+                if word_vec.has_vector:
+                    break
+            if word_vec.vector_norm == 0:
+                print('ERROR: %s not found' % word_name)
+                return None
+    norm_word_vec = word_vec.vector / word_vec.vector_norm  # Normalize vector size
+    return norm_word_vec
 
 
 def extract_object_feature(resnet_trained, h, w):
@@ -210,10 +376,11 @@ def extract_object_feature(resnet_trained, h, w):
 
     # Use glob to list object image
     import glob
-    object_id = 0
-    object_ids = {}
-    object_feature = []
-    object_vector = []
+
+    # 2048 is the resnet feature size
+    object_feature = np.zeros((len(OBJECT_IDS), 2048))
+    # 300 is the word embeddings feature size
+    object_vector = np.zeros((len(OBJECT_IDS), 300))
     # List all jpg files in data/objects/
     for filepath in glob.glob('data/objects/*.jpg'):
 
@@ -228,32 +395,15 @@ def extract_object_feature(resnet_trained, h, w):
         feature = resnet_trained.predict(obj_process)
 
         filename = os.path.splitext(os.path.basename(filepath))[0]
-        object_ids[filename] = object_id
-        object_id = object_id+1
-        object_feature.append(feature)
+        object_feature[OBJECT_IDS[filename]] = feature
 
-        # Usee scapy to extract word embedding vector
-        word_vec = nlp(filename.lower())
+    for object_name, object_id in OBJECT_IDS.items():
+        norm_word_vec = extract_word_emb_vector(nlp, object_name)
+        if norm_word_vec is None:
+            print(object_name)
+        object_vector[object_id] = norm_word_vec
 
-        # If words don't exist in dataset
-        # cut them using uppercase letter (SoapBottle -> Soap Bottle)
-        if word_vec.vector_norm == 0:
-            word = re.sub(r"(?<=\w)([A-Z])", r" \1", filename)
-            word_vec = nlp(word.lower())
-
-            # If no embedding found try to cut word to find embedding (SoapBottle -> [Soap, Bottle])
-            if word_vec.vector_norm == 0:
-                word_split = re.findall('[A-Z][^A-Z]*', filename)
-                for word in word_split:
-                    word_vec = nlp(word.lower())
-                    if word_vec.has_vector:
-                        break
-                if word_vec.vector_norm == 0:
-                    print('ERROR vec not found')
-                    break
-        norm_word_vec = word_vec.vector / word_vec.vector_norm  # Normalize vector size
-        object_vector.append(norm_word_vec)
-    return object_ids, object_feature, object_vector
+    return object_feature, object_vector
 
 
 def main():
@@ -273,12 +423,10 @@ def main():
     for layer in resnet_trained.layers:
         layer.trainable = False
 
-    pbar_names = tqdm(names)
-
-    object_ids, object_feature, object_vector = extract_object_feature(
+    object_feature, object_vector = extract_object_feature(
         resnet_trained, h, w)
 
-    object_names = set()
+    pbar_names = tqdm(names)
 
     for name in pbar_names:
         pbar_names.set_description("%s" % name)
@@ -293,18 +441,17 @@ def main():
                 os.makedirs("data/")
             h5_file = h5py.File("data/" + name + '.h5', 'a')
 
-        write_object_feature(h5_file, object_ids,
+        write_object_feature(h5_file,
                              object_feature, object_vector)
 
         # Construct all possible states
-        states, object_names = create_states(h5_file, resnet_trained,
-                                             controller, name, args, object_names)
+        states = create_states(h5_file, resnet_trained,
+                               controller, name, args)
 
         # Create action-state graph
         create_graph(h5_file, states, controller)
 
         h5_file.close()
-    print(object_names)
 
 
 if __name__ == '__main__':
