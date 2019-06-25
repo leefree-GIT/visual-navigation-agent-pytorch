@@ -79,7 +79,7 @@ class TrainingThread(mp.Process):
         self.init_args = kwargs
         self.scene = scene
         self.saver = saver
-        self.local_backbone_network = SharedNetwork()
+        self.mask_size = self.init_args.get('mask_size', 5)
         self.id = id
         self.device = device
 
@@ -124,8 +124,6 @@ class TrainingThread(mp.Process):
         self.logger.setLevel(logging.INFO)
         self.init_args['h5_file_path'] = lambda scene: h5_file_path.replace(
             '{scene}', scene)
-
-        self.mask_size = self.init_args.get('mask_size', 5)
 
         if self.init_args['use_resnet']:
             self.env = THORDiscreteEnvironmentReal(self.scene,
@@ -184,15 +182,17 @@ class TrainingThread(mp.Process):
             }
 
             x_processed = torch.from_numpy(state["current"])
-            goal_processed = torch.from_numpy(state["goal"])
+            # goal_processed = torch.from_numpy(state["goal"])
             object_mask = torch.from_numpy(state['object_mask'])
 
             x_processed = x_processed.to(self.device)
-            goal_processed = goal_processed.to(self.device)
+            # goal_processed = goal_processed.to(self.device)
             object_mask = object_mask.to(self.device)
 
+            # (policy, value) = self.policy_network(
+            #     (x_processed, goal_processed, object_mask,))
             (policy, value) = self.policy_network(
-                (x_processed, goal_processed, object_mask,))
+                (x_processed, object_mask,))
 
             if (self.id == 0) and (self.local_t % 100) == 0:
                 print(f'Local Step {self.local_t}')
@@ -280,16 +280,18 @@ class TrainingThread(mp.Process):
             return 0.0, results, rollout_path
         else:
             x_processed = torch.from_numpy(self.env.render('resnet_features'))
-            goal_processed = torch.from_numpy(
-                self.env.render_target('word_features'))
+            # goal_processed = torch.from_numpy(
+            #     self.env.render_target('word_features'))
             object_mask = torch.from_numpy(self.env.render_mask())
 
             x_processed = x_processed.to(self.device)
-            goal_processed = goal_processed.to(self.device)
+            # goal_processed = goal_processed.to(self.device)
             object_mask = object_mask.to(self.device)
 
+            # (_, value) = self.policy_network(
+            #     (x_processed, goal_processed, object_mask,))
             (_, value) = self.policy_network(
-                (x_processed, goal_processed, object_mask,))
+                (x_processed, object_mask,))
             return value.data.item(), results, rollout_path
 
     def _optimize_path(self, playout_reward: float, results, rollout_path):

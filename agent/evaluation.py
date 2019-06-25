@@ -127,12 +127,10 @@ class Evaluation:
                     while not terminal:
                         state = torch.Tensor(
                             env.render(mode='resnet_features'))
-                        target = torch.Tensor(
-                            env.render_target(mode='word_features'))
                         object_mask = torch.Tensor(env.render_mask())
 
                         (policy, _,) = scene_net.forward(
-                            self.shared_net.forward((state, target, object_mask,)))
+                            self.shared_net.forward((state, object_mask,)))
 
                         with torch.no_grad():
                             action = F.softmax(policy, dim=0).multinomial(

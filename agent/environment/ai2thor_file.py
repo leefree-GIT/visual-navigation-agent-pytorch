@@ -238,7 +238,7 @@ class THORDiscreteEnvironment(Environment):
         except IndexError as e:
             print((h, w), bbox_location)
             raise e
-        return output
+        return output[np.newaxis, np.newaxis, ...]
 
     @property
     def actions(self):
