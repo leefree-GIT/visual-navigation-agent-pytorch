@@ -72,9 +72,19 @@ class SharedNetwork(nn.Module):
         # Observation layer
         self.fc_observation = nn.Linear(8192, 512)
 
+        # Convolution for similarity grid
+        pooling_kernel = 2
+        self.conv1 = nn.Conv2d(1, 8, 3, stride=1)
+        self.pool = nn.MaxPool2d(pooling_kernel, pooling_kernel)
+        self.conv2 = nn.Conv2d(8, 16, 5, stride=1)
+
+        conv1_output = (mask_size - 3 + 1)//pooling_kernel
+        conv2_output = (conv1_output - 5 + 1)//pooling_kernel
+        self.flat_input = 16 * conv2_output * conv2_output
+
         # Merge layer
         self.fc_merge = nn.Linear(
-            512+self.word_embedding_size+(mask_size*mask_size), 512)
+            512+self.word_embedding_size+self.flat_input, 512)
 
     def forward(self, inp):
         # x is the observation
@@ -90,6 +100,8 @@ class SharedNetwork(nn.Module):
         y = self.fc_target(y)
         y = F.relu(y, True)
 
+        z = self.pool(F.relu(self.conv1(z)))
+        z = self.pool(F.relu(self.conv2(z)))
         z = z.view(-1)
 
         # xy = torch.stack([x, y], 0).view(-1)
