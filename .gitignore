@@ -124,3 +124,4 @@ data/*
 !data/download_scene_dumps.sh
 !data/objects
 !data/objects/*
+!plot_embeddings.py
