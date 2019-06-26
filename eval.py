@@ -35,6 +35,7 @@ if __name__ == '__main__':
     parser.add_argument('--csv_file', type=str, default=None)
     parser.add_argument('--log_arg', type=int, default=0)
     parser.add_argument('--show', action='store_true')
+    parser.add_argument('--train', action='store_true')
 
     # Use experiment.json
     parser.add_argument('--exp', '-e', type=str,
@@ -42,12 +43,18 @@ if __name__ == '__main__':
 
     args = vars(parser.parse_args())
     if args['checkpoint_path'] is not None:
-        args = populate_config(args, mode='eval', checkpoint=False)
+        if args['train']:
+            args = populate_config(args, mode='train', checkpoint=False)
+        else:
+            args = populate_config(args, mode='eval', checkpoint=False)
     else:
-        args = populate_config(args, mode='eval')
+        if args['train']:
+            args = populate_config(args, mode='train')
+        else:
+            args = populate_config(args, mode='eval')
 
     sys.stdout = Logger(args['base_path'] + 'eval' +
                         str(args['log_arg']) + '.log')
 
-    t = Evaluation.load_checkpoint(args)
+    t = Evaluation.load_checkpoints(args)
     t.run(args['show'])
