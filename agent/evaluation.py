@@ -11,6 +11,8 @@ import numpy as np
 import torch
 import torch.multiprocessing as mp
 import torch.nn.functional as F
+from PIL import Image
+from tensorboardX import SummaryWriter
 
 from agent.environment.ai2thor_file import \
     THORDiscreteEnvironment as THORDiscreteEnvironmentFile
@@ -134,6 +136,7 @@ class Evaluation:
                 scene_net = self.scene_nets[scene_scope]
                 scene_net.eval()
                 scene_stats[scene_scope] = list()
+
                 for task_scope in items:
                     if use_resnet:
                         env = THORDiscreteEnvironmentReal(
@@ -162,6 +165,8 @@ class Evaluation:
                     ep_collisions = []
                     ep_actions = []
                     ep_start = []
+                    embedding_vectors = []
+                    state_ids = list()
                     for i_episode in range(self.config['num_episode']):
                         env.reset()
                         terminal = False
@@ -177,12 +182,23 @@ class Evaluation:
                                 env.render_target(mode='resnet_features'))
                             object_mask = torch.Tensor(env.render_mask())
 
-                            (policy, _,) = scene_net.forward(
-                                self.shared_net.forward((state, target, object_mask,)))
+                            embedding = self.shared_net.forward(
+                                (state, target, object_mask,))
+                            (policy, _,) = scene_net.forward(embedding)
+                            embedding = embedding.detach().numpy()
 
                             with torch.no_grad():
                                 action = F.softmax(policy, dim=0).multinomial(
                                     1).data.numpy()[0]
+
+                            if env.current_state_id not in state_ids:
+                                state_ids.append(env.current_state_id)
+                                embedding_vectors.append(embedding)
+                            else:
+                                state_idx = state_ids.index(
+                                    env.current_state_id)
+                                embedding_vectors[state_idx] = (
+                                    embedding_vectors[state_idx] + embedding)/2
 
                             env.step(action)
                             actions.append(action)
@@ -271,6 +287,27 @@ class Evaluation:
                             for i in range(10):
                                 video.write(img)
                             video.release()
+
+                    # Use tensorboard to plot embeddings
+                    embedding_writer = SummaryWriter(
+                        self.config['log_path'] + '/embeddings/' + scene_scope + '_' + str(chk_id))
+                    obss = []
+
+                    for indx, obs in enumerate(env.h5_file['observation']):
+                        if indx in state_ids:
+                            img = Image.fromarray(obs)
+                            img = img.resize((32, 32))
+                            obss.append(np.array(img))
+
+                    obss = np.transpose(obss, (0, 3, 1, 2))
+                    obss = obss / 255
+                    obss = torch.from_numpy(obss)
+
+                    # Write embeddings
+                    embedding_writer.add_embedding(
+                        embedding_vectors, label_img=obss,
+                        tag=task_scope['object'], global_step=chk_id)
+
             print('\nResults (average trajectory length):')
             for scene_scope in scene_stats:
                 print('%s: %.2f steps' %
