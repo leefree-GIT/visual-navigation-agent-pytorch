@@ -121,15 +121,22 @@ class Evaluation:
             gpu_thread.start()
 
         # Create csv writer with correct header
-        writer_csv = prepare_csv(
-            self.config['base_path'] + 'eval.csv', self.config['task_list'].items())
+        if self.config['train']:
+            writer_csv = prepare_csv(
+                self.config['base_path'] + 'eval.csv', self.config['task_list'].items())
+        else:
+            writer_csv = prepare_csv(
+                self.config['base_path'] + 'train.csv', self.config['task_list'].items())
 
         for chk_id in self.chk_numbers:
             resultData = [chk_id]
             scene_stats = dict()
-
-            sys.stdout = Logger(self.config['base_path'] + 'eval' +
-                                str(chk_id) + '.log')
+            if self.config['train']:
+                sys.stdout = Logger(self.config['base_path'] + 'train' +
+                                    str(chk_id) + '.log')
+            else:
+                sys.stdout = Logger(self.config['base_path'] + 'eval' +
+                                    str(chk_id) + '.log')
             self.restore()
             self.next_checkpoint()
             for scene_scope, items in self.config['task_list'].items():
@@ -289,14 +296,18 @@ class Evaluation:
                             video.release()
 
                     # Use tensorboard to plot embeddings
-                    embedding_writer = SummaryWriter(
-                        self.config['log_path'] + '/embeddings/' + scene_scope + '_' + str(chk_id))
+                    if self.config['train']:
+                        embedding_writer = SummaryWriter(
+                            self.config['log_path'] + '/embeddings_train/' + scene_scope + '_' + str(chk_id))
+                    else:
+                        embedding_writer = SummaryWriter(
+                            self.config['log_path'] + '/embeddings/' + scene_scope + '_' + str(chk_id))
                     obss = []
 
                     for indx, obs in enumerate(env.h5_file['observation']):
                         if indx in state_ids:
                             img = Image.fromarray(obs)
-                            img = img.resize((32, 32))
+                            img = img.resize((64, 64))
                             obss.append(np.array(img))
 
                     obss = np.transpose(obss, (0, 3, 1, 2))
