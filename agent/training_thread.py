@@ -79,7 +79,6 @@ class TrainingThread(mp.Process):
         self.init_args = kwargs
         self.scene = scene
         self.saver = saver
-        self.local_backbone_network = SharedNetwork()
         self.id = id
         self.device = device
 
