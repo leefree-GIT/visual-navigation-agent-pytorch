@@ -31,7 +31,7 @@ def prepare_csv(file, scene_task):
     writer = csv.writer(f)
     header = ['']
     header2lvl = ['Checkpoints']
-    values = ['_reward', '_length', '_collision']
+    values = ['_reward', '_length', '_collision', '_success']
     for scene_scope, tasks_scope in scene_task:
         for task in tasks_scope:
             for val in values:
@@ -175,6 +175,7 @@ class Evaluation:
                     ep_collisions = []
                     ep_actions = []
                     ep_start = []
+                    ep_success = 0
                     embedding_vectors = []
                     state_ids = list()
                     for i_episode in range(self.config['num_episode']):
@@ -223,6 +224,8 @@ class Evaluation:
                         ep_actions.append(actions)
                         ep_lengths.append(ep_t)
                         ep_rewards.append(ep_reward)
+                        if ep_t <= 500:
+                            ep_success = ep_success + 1
                         ep_collisions.append(ep_collision)
                         log.write("episode #{} ends after {} steps".format(
                             i_episode, ep_t))
@@ -234,11 +237,15 @@ class Evaluation:
                               np.mean(ep_lengths))
                     log.write('mean episode collision: %.2f' %
                               np.mean(ep_collisions))
+                    ep_success_percent = (
+                        (ep_success / self.config['num_episode']) * 100)
+                    log.write('episode success: %.2f%%' %
+                              ep_success_percent)
                     log.write('')
                     scene_stats[scene_scope].extend(ep_lengths)
 
                     tmpData = [np.mean(
-                        ep_rewards), np.mean(ep_lengths), np.mean(ep_collisions)]
+                        ep_rewards), np.mean(ep_lengths), np.mean(ep_collisions), ep_success_percent]
                     resultData = np.hstack((resultData, tmpData))
 
                     # Show best episode from evaluation
