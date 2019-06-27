@@ -47,15 +47,18 @@ class Logger(object):
         self.terminal = sys.stdout
         self.log = open(path, "w")
 
-    def write(self, message):
-        self.terminal.write(message)
-        self.log.write(message)
+    def write(self, message, term='\n'):
+        self.terminal.write(message + term)
+        self.log.write(message + term)
 
     def flush(self):
         # this flush method is needed for python 3 compatibility.
         # this handles the flush command by doing nothing.
         # you might want to specify some extra behavior here.
         pass
+
+    def __del__(self):
+        self.log.close()
 
 
 class Evaluation:
@@ -121,18 +124,22 @@ class Evaluation:
             gpu_thread.start()
 
         # Create csv writer with correct header
-        writer_csv = prepare_csv(
-            self.config['base_path'] + 'eval.csv', self.config['task_list'].items())
+        if self.config['train']:
+            writer_csv = prepare_csv(
+                self.config['base_path'] + 'train.csv', self.config['task_list'].items())
+        else:
+            writer_csv = prepare_csv(
+                self.config['base_path'] + 'eval.csv', self.config['task_list'].items())
 
         for chk_id in self.chk_numbers:
             resultData = [chk_id]
             scene_stats = dict()
             if self.config['train']:
-                sys.stdout = Logger(self.config['base_path'] + 'train' +
-                                    str(chk_id) + '.log')
+                log = Logger(self.config['base_path'] + 'train' +
+                             str(chk_id) + '.log')
             else:
-                sys.stdout = Logger(self.config['base_path'] + 'eval' +
-                                    str(chk_id) + '.log')
+                log = Logger(self.config['base_path'] + 'eval' +
+                             str(chk_id) + '.log')
             self.restore()
             self.next_checkpoint()
             for scene_scope, items in self.config['task_list'].items():
@@ -218,16 +225,17 @@ class Evaluation:
                         ep_lengths.append(ep_t)
                         ep_rewards.append(ep_reward)
                         ep_collisions.append(ep_collision)
-                        print("episode #{} ends after {} steps".format(
+                        log.write("episode #{} ends after {} steps".format(
                             i_episode, ep_t))
 
-                    print('evaluation: %s %s' % (scene_scope, task_scope))
-                    print('mean episode reward: %.2f' %
-                          np.mean(ep_rewards))
-                    print('mean episode length: %.2f' %
-                          np.mean(ep_lengths))
-                    print('mean episode collision: %.2f' %
-                          np.mean(ep_collisions))
+                    log.write('evaluation: %s %s' % (scene_scope, task_scope))
+                    log.write('mean episode reward: %.2f' %
+                              np.mean(ep_rewards))
+                    log.write('mean episode length: %.2f' %
+                              np.mean(ep_lengths))
+                    log.write('mean episode collision: %.2f' %
+                              np.mean(ep_collisions))
+                    log.write('')
                     scene_stats[scene_scope].extend(ep_lengths)
 
                     tmpData = [np.mean(
@@ -303,7 +311,7 @@ class Evaluation:
                     for indx, obs in enumerate(env.h5_file['observation']):
                         if indx in state_ids:
                             img = Image.fromarray(obs)
-                            img = img.resize((32, 32))
+                            img = img.resize((64, 64))
                             obss.append(np.array(img))
 
                     obss = np.transpose(obss, (0, 3, 1, 2))
@@ -315,10 +323,10 @@ class Evaluation:
                         embedding_vectors, label_img=obss,
                         tag=task_scope['object'], global_step=chk_id)
 
-            print('\nResults (average trajectory length):')
+            log.write('\nResults (average trajectory length):')
             for scene_scope in scene_stats:
-                print('%s: %.2f steps' %
-                      (scene_scope, np.mean(scene_stats[scene_scope])))
+                log.write('%s: %.2f steps' %
+                          (scene_scope, np.mean(scene_stats[scene_scope])))
             # Write data to csv
             writer_csv.writerow(list(resultData))
         if use_resnet:
