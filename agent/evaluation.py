@@ -61,7 +61,7 @@ class Logger(object):
 class Evaluation:
     def __init__(self, config):
         self.config = config
-        self.shared_net = SharedNetwork()
+        self.shared_net = SharedNetwork(self.config.get('mask_size', 5))
         self.scene_nets = {key: SceneSpecificNetwork(
             self.config['action_size']) for key in config['task_list'].keys()}
 

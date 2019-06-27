@@ -210,7 +210,7 @@ class Training:
 
     def initialize(self):
         # Shared network
-        self.shared_network = SharedNetwork()
+        self.shared_network = SharedNetwork(self.config.get('mask_size', 5))
         self.scene_networks = {key: SceneSpecificNetwork(
             self.config['action_size']) for key in self.tasks.keys()}
 
