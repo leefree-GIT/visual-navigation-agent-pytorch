@@ -23,6 +23,7 @@ if __name__ == '__main__':
                         help='Experiment parameters.json file', required=True)
 
     args = vars(parser.parse_args())
+
     if args['checkpoint_path'] is not None:
         if args['train']:
             args = populate_config(args, mode='train', checkpoint=False)
@@ -33,6 +34,14 @@ if __name__ == '__main__':
             args = populate_config(args, mode='train')
         else:
             args = populate_config(args, mode='eval')
+
+    if args.get('method', None) is None:
+        print('ERROR Please choose a method in json file')
+        print('- "aop"')
+        print('- "word2vec"')
+        print('- "target_driven"')
+
+        exit()
 
     t = Evaluation.load_checkpoints(args)
     t.run(args['show'])

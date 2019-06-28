@@ -45,6 +45,14 @@ if __name__ == '__main__':
     args = vars(parser.parse_args())
     args = populate_config(args)
 
+    if args.get('method', None) is None:
+        print('ERROR Please choose a method in json file')
+        print('- "aop"')
+        print('- "word2vec"')
+        print('- "target_driven"')
+
+        exit()
+
     torch.manual_seed(args['seed'])
 
     if args['restore']:

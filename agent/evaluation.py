@@ -65,7 +65,8 @@ class Logger(object):
 class Evaluation:
     def __init__(self, config):
         self.config = config
-        self.shared_net = SharedNetwork(self.config.get('mask_size', 5))
+        self.shared_net = SharedNetwork(
+            self.config['method'], self.config.get('mask_size', 5))
         self.scene_nets = {key: SceneSpecificNetwork(
             self.config['action_size']) for key in config['task_list'].keys()}
 
@@ -73,6 +74,7 @@ class Evaluation:
         self.checkpoint_id = 0
         self.saver = None
         self.chk_numbers = None
+        self.method = config['method']
 
     @staticmethod
     def load_checkpoints(config, fail=True):
@@ -160,15 +162,15 @@ class Evaluation:
                             terminal_state_id=int(task_scope)
                         )
                     else:
-                        env = THORDiscreteEnvironmentFile(
-                            scene_name=scene_scope,
-                            use_resnet=use_resnet,
-                            h5_file_path=(lambda scene: self.config.get(
-                                "h5_file_path", "D:\\datasets\\visual_navigation_precomputed\\{scene}.h5").replace('{scene}', scene)),
-                            terminal_state=task_scope,
-                            action_size=self.config['action_size'],
-                            mask_size=self.config.get('mask_size', 5)
-                        )
+                        env = THORDiscreteEnvironmentFile(scene_name=scene_scope,
+                                                          method=self.method,
+                                                          reward=self.config['reward'],
+                                                          h5_file_path=(lambda scene: self.config.get(
+                                                              "h5_file_path").replace('{scene}', scene)),
+                                                          terminal_state=task_scope,
+                                                          action_size=self.config['action_size'],
+                                                          mask_size=self.config.get(
+                                                              'mask_size', 5))
 
                     ep_rewards = []
                     ep_lengths = []
@@ -187,14 +189,43 @@ class Evaluation:
                         actions = []
                         ep_start.append(env.current_state_id)
                         while not terminal:
-                            state = torch.Tensor(
-                                env.render(mode='resnet_features'))
-                            target = torch.Tensor(
-                                env.render_target(mode='word_features'))
-                            object_mask = torch.Tensor(env.render_mask())
+                            if self.method == 'word2vec':
+                                state = {
+                                    "current": env.render('resnet_features'),
+                                    "goal": env.render_target('word_features'),
+                                    "object_mask": env.render_mask_similarity()
+                                }
+                            elif self.method == 'aop':
+                                state = {
+                                    "current": env.render('resnet_features'),
+                                    "goal": env.render_target('word_features'),
+                                    "object_mask": env.render_mask()
+                                }
+                            elif self.method == 'target_driven':
+                                state = {
+                                    "current": env.render('resnet_features'),
+                                    "goal": env.render_target('resnet_features'),
+                                }
 
-                            embedding = self.shared_net.forward(
-                                (state, target, object_mask,))
+                            if self.method == 'word2vec' or self.method == 'aop':
+                                x_processed = torch.from_numpy(
+                                    state["current"])
+                                goal_processed = torch.from_numpy(
+                                    state["goal"])
+                                object_mask = torch.from_numpy(
+                                    state['object_mask'])
+
+                                embedding = self.shared_net.forward(
+                                    (x_processed, goal_processed, object_mask,))
+                            elif self.method == 'target_driven':
+                                x_processed = torch.from_numpy(
+                                    state["current"])
+                                goal_processed = torch.from_numpy(
+                                    state["goal"])
+
+                                embedding = self.shared_net.forward(
+                                    (x_processed, goal_processed,))
+
                             (policy, _,) = scene_net.forward(embedding)
                             embedding = embedding.detach().numpy()
 

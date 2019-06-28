@@ -57,6 +57,8 @@ class TrainingThread(mp.Process):
                  evt,
                  summary_queue: mp.Queue,
                  device,
+                 method: str,
+                 reward: str,
                  **kwargs):
         """TrainingThread constructor
 
@@ -79,7 +81,6 @@ class TrainingThread(mp.Process):
         self.init_args = kwargs
         self.scene = scene
         self.saver = saver
-        self.local_backbone_network = SharedNetwork()
         self.id = id
         self.device = device
 
@@ -93,6 +94,8 @@ class TrainingThread(mp.Process):
         self.evt = evt
 
         self.summary_queue = summary_queue
+        self.method = method
+        self.reward = reward
 
     def _sync_network(self):
         if self.init_args['cuda']:
@@ -102,13 +105,6 @@ class TrainingThread(mp.Process):
         else:
             state_dict = self.master_network.state_dict()
             self.policy_network.load_state_dict(state_dict)
-
-    def _ensure_shared_grads(self):
-        for param, shared_param in zip(self.policy_network.parameters(), self.master_network.parameters()):
-            print("ensure_shared")
-            if shared_param.grad is not None:
-                return
-            shared_param._grad = param.grad
 
     def get_action_space_size(self):
         return len(self.env.actions)
@@ -128,13 +124,15 @@ class TrainingThread(mp.Process):
         self.mask_size = self.init_args.get('mask_size', 5)
 
         if self.init_args['use_resnet']:
-            self.env = THORDiscreteEnvironmentReal(self.scene,
+            self.env = THORDiscreteEnvironmentReal(scene_name=self.scene,
                                                    input_queue=self.i_queue,
                                                    output_queue=self.o_queue,
                                                    evt=self.evt,
                                                    **self.init_args)
         else:
-            self.env = THORDiscreteEnvironmentFile(self.scene,
+            self.env = THORDiscreteEnvironmentFile(scene_name=self.scene,
+                                                   method=self.method,
+                                                   reward=self.reward,
                                                    input_queue=self.i_queue,
                                                    output_queue=self.o_queue,
                                                    evt=self.evt,
@@ -150,7 +148,7 @@ class TrainingThread(mp.Process):
         self.criterion = ActorCriticLoss(entropy_beta)
 
         self.policy_network = nn.Sequential(
-            SharedNetwork(self.mask_size), SceneSpecificNetwork(self.get_action_space_size()))
+            SharedNetwork(self.method, self.mask_size), SceneSpecificNetwork(self.get_action_space_size()))
         self.policy_network = self.policy_network.to(self.device)
         # Store action for each episode
         self.saved_actions = []
@@ -177,22 +175,44 @@ class TrainingThread(mp.Process):
         for t in range(self.max_t):
 
             # Resnet feature are extracted or computed here
-            state = {
-                "current": self.env.render('resnet_features'),
-                "goal": self.env.render_target('word_features'),
-                "object_mask": self.env.render_mask()
-            }
+            if self.method == 'word2vec':
+                state = {
+                    "current": self.env.render('resnet_features'),
+                    "goal": self.env.render_target('word_features'),
+                    "object_mask": self.env.render_mask_similarity()
+                }
+            elif self.method == 'aop':
+                state = {
+                    "current": self.env.render('resnet_features'),
+                    "goal": self.env.render_target('word_features'),
+                    "object_mask": self.env.render_mask()
+                }
+            elif self.method == 'target_driven':
+                state = {
+                    "current": self.env.render('resnet_features'),
+                    "goal": self.env.render_target('resnet_features'),
+                }
 
-            x_processed = torch.from_numpy(state["current"])
-            goal_processed = torch.from_numpy(state["goal"])
-            object_mask = torch.from_numpy(state['object_mask'])
+            if self.method == 'word2vec' or self.method == 'aop':
+                x_processed = torch.from_numpy(state["current"])
+                goal_processed = torch.from_numpy(state["goal"])
+                object_mask = torch.from_numpy(state['object_mask'])
 
-            x_processed = x_processed.to(self.device)
-            goal_processed = goal_processed.to(self.device)
-            object_mask = object_mask.to(self.device)
+                x_processed = x_processed.to(self.device)
+                goal_processed = goal_processed.to(self.device)
+                object_mask = object_mask.to(self.device)
 
-            (policy, value) = self.policy_network(
-                (x_processed, goal_processed, object_mask,))
+                (policy, value) = self.policy_network(
+                    (x_processed, goal_processed, object_mask,))
+            elif self.method == 'target_driven':
+                x_processed = torch.from_numpy(state["current"])
+                goal_processed = torch.from_numpy(state["goal"])
+
+                x_processed = x_processed.to(self.device)
+                goal_processed = goal_processed.to(self.device)
+
+                (policy, value) = self.policy_network(
+                    (x_processed, goal_processed,))
 
             if (self.id == 0) and (self.local_t % 100) == 0:
                 print(f'Local Step {self.local_t}')
@@ -279,17 +299,43 @@ class TrainingThread(mp.Process):
         if terminal_end:
             return 0.0, results, rollout_path
         else:
-            x_processed = torch.from_numpy(self.env.render('resnet_features'))
-            goal_processed = torch.from_numpy(
-                self.env.render_target('word_features'))
-            object_mask = torch.from_numpy(self.env.render_mask())
+            if self.method == 'word2vec':
+                state = {
+                    "current": self.env.render('resnet_features'),
+                    "goal": self.env.render_target('word_features'),
+                    "object_mask": self.env.render_mask_similarity()
+                }
+            elif self.method == 'aop':
+                state = {
+                    "current": self.env.render('resnet_features'),
+                    "goal": self.env.render_target('word_features'),
+                    "object_mask": self.env.render_mask()
+                }
+            elif self.method == 'target_driven':
+                state = {
+                    "current": self.env.render('resnet_features'),
+                    "goal": self.env.render_target('resnet_features'),
+                }
+            if self.method == 'word2vec' or self.method == 'aop':
+                x_processed = torch.from_numpy(state["current"])
+                goal_processed = torch.from_numpy(state["goal"])
+                object_mask = torch.from_numpy(state['object_mask'])
 
-            x_processed = x_processed.to(self.device)
-            goal_processed = goal_processed.to(self.device)
-            object_mask = object_mask.to(self.device)
+                x_processed = x_processed.to(self.device)
+                goal_processed = goal_processed.to(self.device)
+                object_mask = object_mask.to(self.device)
 
-            (_, value) = self.policy_network(
-                (x_processed, goal_processed, object_mask,))
+                (policy, value) = self.policy_network(
+                    (x_processed, goal_processed, object_mask,))
+            elif self.method == 'target_driven':
+                x_processed = torch.from_numpy(state["current"])
+                goal_processed = torch.from_numpy(state["goal"])
+
+                x_processed = x_processed.to(self.device)
+                goal_processed = goal_processed.to(self.device)
+
+                (policy, value) = self.policy_network(
+                    (x_processed, goal_processed,))
             return value.data.item(), results, rollout_path
 
     def _optimize_path(self, playout_reward: float, results, rollout_path):

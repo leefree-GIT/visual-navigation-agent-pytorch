@@ -176,6 +176,7 @@ class Training:
                 self.device = torch.device("cpu")
             else:
                 self.device = torch.device("cuda:" + str(device_id))
+        self.method = self.config['method']
         self.initialize()
 
     @staticmethod
@@ -210,7 +211,8 @@ class Training:
 
     def initialize(self):
         # Shared network
-        self.shared_network = SharedNetwork(self.config.get('mask_size', 5))
+        self.shared_network = SharedNetwork(
+            self.method, self.config.get('mask_size', 5))
         self.scene_networks = {key: SceneSpecificNetwork(
             self.config['action_size']) for key in self.tasks.keys()}
 
@@ -403,6 +405,8 @@ class Training:
         return logger
 
     def print_parameters(self):
+        self.logger.info("Method : %s" % self.config.get('method'))
+        self.logger.info("Reward : %s" % self.config.get('reward'))
         self.logger.info("- gamma: %s" % str(self.config.get('gamma')))
         self.logger.info(
             "- learning rate: %s" % str(self.config.get('learning_rate')))

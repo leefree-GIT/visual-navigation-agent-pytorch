@@ -15,6 +15,8 @@ class THORDiscreteEnvironment(Environment):
             "LookUp", "LookDown", "MoveRight", "MoveLeft"]
 
     def __init__(self,
+                 method: str,
+                 reward: str,
                  scene_name='FloorPlan1',
                  n_feat_per_location=1,
                  history_length: int = 4,
@@ -22,7 +24,6 @@ class THORDiscreteEnvironment(Environment):
                  h5_file_path=None,
                  action_size: int = 4,
                  mask_size: int = 5,
-                 reward: str = 'bbox',
                  **kwargs):
         """THORDiscreteEnvironment constructor, it represent a world where an agent evolves
 
@@ -63,6 +64,7 @@ class THORDiscreteEnvironment(Environment):
 
         self.action_size = action_size
 
+        self.method = method
         self.reward_fun = reward
 
         self.object_ids = json.loads(self.h5_file.attrs['object_ids'])
@@ -75,14 +77,23 @@ class THORDiscreteEnvironment(Environment):
         self.time = 0
 
         # LAST instruction
-        # terminal_id = None
-        # for i, loc in enumerate(self.locations):
-        #     if np.array_equal(loc, list(self.terminal_state['position'].values())):
-        #         if np.array_equal(self.rotations[i], list(self.terminal_state['rotation'].values())):
-        #             terminal_id = i
-        #             break
-        # self.s_target = self._tiled_state(terminal_id)
-        self.s_target = self.object_vector[self.object_ids[self.terminal_state['object']]]
+        if self.method == 'word2vec':
+            self.s_target = self.object_vector[self.object_ids[self.terminal_state['object']]]
+
+        elif self.method == 'aop':
+            self.s_target = object_feature[self.object_ids[self.terminal_state['object']]]
+
+        elif self.method == 'target_driven':
+            # LAST instruction
+            terminal_id = None
+            for i, loc in enumerate(self.locations):
+                if np.array_equal(loc, list(self.terminal_state['position'].values())):
+                    if np.array_equal(self.rotations[i], list(self.terminal_state['rotation'].values())):
+                        terminal_id = i
+                        break
+            self.s_target = self._tiled_state(terminal_id)
+        else:
+            raise Exception('Please choose a method')
 
         self.mask_size = mask_size
 
@@ -156,10 +167,9 @@ class THORDiscreteEnvironment(Environment):
                 area = max(area, w * h)
         return area
 
-    def _calculate_reward(self, bbox_area, max_bbox_area):
+    def _calculate_bbox_reward(self, bbox_area, max_bbox_area):
         if bbox_area > max_bbox_area:
-            max_bbox_area = bbox_area
-            return max_bbox_area
+            return bbox_area
         else:
             return 0
 
@@ -186,11 +196,13 @@ class THORDiscreteEnvironment(Environment):
     @property
     def reward(self):
         if self.reward_fun == 'bbox':
-            reward_ = self._calculate_reward(
+            reward_ = self._calculate_bbox_reward(
                 self.bbox_area, self.max_bbox_area)
+
             if reward_ != 0:
                 self.max_bbox_area = reward_
             return reward_
+
         elif self.reward_fun == 'step':
             return 10.0 if self.terminal else -0.01
 
@@ -211,10 +223,14 @@ class THORDiscreteEnvironment(Environment):
         return self.s_t
 
     def render_target(self, mode):
-        assert mode == 'word_features'
-        return self.s_target
+        if self.method == 'aop' or self.method == 'word2vec':
+            assert mode == 'word_features'
+            return self.s_target
+        elif self.method == 'target_driven':
+            assert mode == 'resnet_features'
+            return self.s_target
 
-    def render_mask(self):
+    def render_mask_similarity(self):
         # Get shape of observation to downsample bbox location
         h, w, _ = np.shape(self.h5_file['observation'][0])
 
@@ -239,6 +255,27 @@ class THORDiscreteEnvironment(Environment):
             print((h, w), bbox_location)
             raise e
         return output[np.newaxis, np.newaxis, ...]
+
+    def render_mask(self):
+        # Get shape of observation to downsample bbox location
+        h, w, _ = np.shape(self.h5_file['observation'][0])
+
+        bbox_location = []
+        for key, value in self.boudingbox.items():
+            keys = key.split('|')
+            if keys[0] == self.terminal_state['object']:
+                x = value[0] + value[2]
+                x = x/2
+                y = value[1] + value[3]
+                y = y/2
+                bbox_location.append(((x, y), 1))
+        try:
+            output = self._downsample_bbox(
+                (h, w), (self.mask_size, self.mask_size), bbox_location)
+        except IndexError as e:
+            print((h, w), bbox_location)
+            raise e
+        return output
 
     @property
     def actions(self):

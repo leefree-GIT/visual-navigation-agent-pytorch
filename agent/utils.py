@@ -91,6 +91,7 @@ def populate_config(config, mode='train', checkpoint=True):
     config['saving_period'] = int(json_dump['saving_period'])
     config['max_t'] = int(json_dump['max_t'])
     config['action_size'] = int(json_dump['action_size'])
+    config['method'] = json_dump['method']
 
     return config
 
