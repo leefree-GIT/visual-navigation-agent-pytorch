@@ -2,6 +2,7 @@
 
 import csv
 import imp
+import os
 import sys
 from itertools import groupby
 
@@ -78,7 +79,6 @@ class Evaluation:
         checkpoint_path = config.get(
             'checkpoint_path', 'model/checkpoint-{checkpoint}.pth')
 
-        import os
         checkpoints = []
         (base_name, chk_numbers) = find_restore_points(checkpoint_path, fail)
         try:
@@ -205,11 +205,6 @@ class Evaluation:
                             if env.current_state_id not in state_ids:
                                 state_ids.append(env.current_state_id)
                                 embedding_vectors.append(embedding)
-                            else:
-                                state_idx = state_ids.index(
-                                    env.current_state_id)
-                                embedding_vectors[state_idx] = (
-                                    embedding_vectors[state_idx] + embedding)/2
 
                             env.step(action)
                             actions.append(action)
@@ -278,14 +273,19 @@ class Evaluation:
 
                         names_video = ['best', 'median', 'worst']
 
+                        # Create dir if not exisiting
+                        directory = os.path.join(
+                            self.config['base_path'], 'video', str(chk_id))
+                        if not os.path.exists(directory):
+                            os.makedirs(directory)
                         for idx_name, idx in enumerate([index_best, index_median, index_worst]):
                             # Create video to save
                             height, width, layers = np.shape(
                                 env.observation)
-                            video_name = self.config['base_path'] + scene_scope + '_' + \
-                                task_scope['object'] + '_' + \
-                                names_video[idx_name] + '_' + \
-                                str(ep_lengths[idx]) + '.avi'
+                            video_name = os.path.join(directory, scene_scope + '_' +
+                                                      task_scope['object'] + '_' +
+                                                      names_video[idx_name] + '_' +
+                                                      str(ep_lengths[idx]) + '.avi')
                             FPS = 5
                             video = cv2.VideoWriter(
                                 video_name, cv2.VideoWriter_fourcc(*"MJPG"), FPS, (width, height))
