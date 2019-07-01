@@ -20,7 +20,7 @@ actions = ["MoveAhead", "RotateRight", "RotateLeft",
            "MoveBack", "LookUp", "LookDown", "MoveRight", "MoveLeft"]
 rotation_possible_inplace = 4
 ACTION_SIZE = len(actions)
-StateStruct = namedtuple("StateStruct", "id pos rot obs feat bbox")
+StateStruct = namedtuple("StateStruct", "id pos rot obs feat bbox obj_visible")
 
 # Extracted from unity/Assets/Scripts/SimObjType.cs
 OBJECT_IDS = {
@@ -240,6 +240,10 @@ def create_states(h5_file, resnet_trained, controller, name, args):
                     # Extract resnet feature from observation
                     feature = resnet_trained.predict(obs_process)
 
+                    # Store visible objects from the agent (visible = 1m away from the agent)
+                    obj_visible = [obj['objectId']
+                                   for obj in state.metadata['objects'] if obj['visible']]
+                    print(obj_visible)
                     state_struct = StateStruct(
                         idx,
                         state.metadata['agent']['position'],
@@ -247,7 +251,8 @@ def create_states(h5_file, resnet_trained, controller, name, args):
                         obs=state.frame,
                         feat=feature,
                         bbox=json.dumps(
-                            state.instance_detections2D, cls=NumpyEncoder))
+                            state.instance_detections2D, cls=NumpyEncoder),
+                        obj_visible=json.dumps(obj_visible))
 
                     if search_namedtuple(states, state_struct):
                         print("Already exists")
@@ -310,7 +315,8 @@ def create_graph(h5_file, states, controller, args):
                                                      state_controller.metadata['agent']['rotation'],
                                                      obs=None,
                                                      feat=None,
-                                                     bbox=None)
+                                                     bbox=None,
+                                                     obj_visible=None)
 
                 if not equal(state, state_controller_named) and not round(state_controller.metadata['agent']['cameraHorizon']) == 60:
                     found = search_namedtuple(
@@ -424,9 +430,10 @@ def create_shortest_path(h5_file, states, graph):
             shortest_dist_graph[state_id_src][state_id_dst] = len(
                 shortest_path[state_id_src][state_id_dst]) - 1
 
-    if 'shortest_path_distance' not in h5_file.keys():
-        h5_file.create_dataset('shortest_path_distance',
-                               data=shortest_dist_graph)
+    if 'shortest_path_distance' in h5_file.keys():
+        del h5_file['shortest_path_distance']
+    h5_file.create_dataset('shortest_path_distance',
+                           data=shortest_dist_graph)
 
 
 def main():
