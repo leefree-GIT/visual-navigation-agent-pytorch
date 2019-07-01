@@ -12,15 +12,15 @@ from keras.applications import resnet50
 from PIL import Image
 from tqdm import tqdm
 
-# "FloorPlan1",
-names = ["FloorPlan2", "FloorPlan201", "FloorPlan202",
-         "FloorPlan301", "FloorPlan302", "FloorPlan401", "FloorPlan402"]
+# , "FloorPlan2", "FloorPlan201", "FloorPlan202", "FloorPlan301", "FloorPlan302", "FloorPlan401", "FloorPlan402"]
+names = ["FloorPlan1"]
 grid_size = 0.5
 
 actions = ["MoveAhead", "RotateRight", "RotateLeft",
            "MoveBack", "LookUp", "LookDown", "MoveRight", "MoveLeft"]
 rotation_possible_inplace = 4
 ACTION_SIZE = len(actions)
+StateStruct = namedtuple("StateStruct", "id pos rot obs feat bbox")
 
 # Extracted from unity/Assets/Scripts/SimObjType.cs
 OBJECT_IDS = {
@@ -213,7 +213,6 @@ def create_states(h5_file, resnet_trained, controller, name, args):
     states = []
     obss = []
     idx = 0
-    StateStruct = namedtuple("StateStruct", "id pos rot obs feat bbox")
     # Does not redo if already existing
     if args['force'] or \
         'resnet_feature' not in h5_file.keys() or \
@@ -247,7 +246,8 @@ def create_states(h5_file, resnet_trained, controller, name, args):
                         state.metadata['agent']['rotation'],
                         obs=state.frame,
                         feat=feature,
-                        bbox=json.dumps(state.instance_detections2D, cls=NumpyEncoder))
+                        bbox=json.dumps(
+                            state.instance_detections2D, cls=NumpyEncoder))
 
                     if search_namedtuple(states, state_struct):
                         print("Already exists")
@@ -293,7 +293,6 @@ def create_states(h5_file, resnet_trained, controller, name, args):
 def create_graph(h5_file, states, controller, args):
     num_states = len(states)
     graph = np.full((num_states, ACTION_SIZE), -1)
-    StateStruct = namedtuple("StateStruct", "id pos rot obs feat bbox")
     # Speed improvement
     state = controller.step(
         dict(action='Initialize', gridSize=grid_size, renderObjectImage=False))
@@ -318,7 +317,7 @@ def create_graph(h5_file, states, controller, args):
                         states, state_controller_named)
                     if found is None:
                         # print(state_controller_named)
-                        # print("Error, state not found")
+                        print("Error, state not found")
                         # exit()
                         continue
                     graph[state.id][i] = found.id
@@ -327,11 +326,7 @@ def create_graph(h5_file, states, controller, args):
 
         h5_file.create_dataset(
             'graph', data=graph)
-
-    shortest_path_distance = np.ones((num_states, num_states))
-    if 'shortest_path_distance' not in h5_file.keys():
-        h5_file.create_dataset('shortest_path_distance',
-                               data=shortest_path_distance)
+        return graph
 
 
 def write_object_feature(h5_file, object_feature, object_vector):
@@ -410,6 +405,30 @@ def extract_object_feature(resnet_trained, h, w):
     return object_feature, object_vector
 
 
+def create_shortest_path(h5_file, states, graph):
+    # Usee network to compute shortest path
+    import networkx as nx
+    num_states = len(states)
+    G = nx.Graph()
+    shortest_dist_graph = np.full((num_states, num_states), -1)
+
+    for state in states:
+        G.add_node(state.id)
+    for state in states:
+        for i, a in enumerate(actions):
+            if graph[state.id][i] != -1:
+                G.add_edge(state.id, graph[state.id][i])
+    shortest_path = nx.shortest_path(G)
+    for state_id_src in range(num_states):
+        for state_id_dst in range(num_states):
+            shortest_dist_graph[state_id_src][state_id_dst] = len(
+                shortest_path[state_id_src][state_id_dst]) - 1
+
+    if 'shortest_path_distance' not in h5_file.keys():
+        h5_file.create_dataset('shortest_path_distance',
+                               data=shortest_dist_graph)
+
+
 def main():
     argparse.ArgumentParser(description="")
     parser = argparse.ArgumentParser(description='Dataset creation.')
@@ -454,9 +473,14 @@ def main():
                                controller, name, args)
 
         # Create action-state graph
-        create_graph(h5_file, states, controller, args)
+        graph = create_graph(h5_file, states, controller, args)
+
+        # Create shortest path from all state
+        create_shortest_path(h5_file, states, graph)
 
         h5_file.close()
+
+        return states, graph
 
 
 if __name__ == '__main__':

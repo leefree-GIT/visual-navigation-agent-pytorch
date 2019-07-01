@@ -10,3 +10,4 @@ tqdm
 gputil
 opencv-python
 scipy
+networkx
