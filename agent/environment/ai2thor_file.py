@@ -187,15 +187,10 @@ class THORDiscreteEnvironment(Environment):
 
         for i_bbox in input_bbox:
             bbox_xy, similarity = i_bbox
-            start_x = int(ratio_w * bbox_xy[0])
-            end_x = int(ratio_w * bbox_xy[2])
-
-            start_y = int(ratio_h * bbox_xy[1])
-            end_y = int(ratio_h * bbox_xy[3])
-            for out_x in range(start_x, end_x, 1):
-                for out_y in range(start_y, end_y, 1):
-                    output[out_x, out_y] = max(
-                        output[out_x, out_y], similarity)
+            x, y = bbox_xy
+            out_x = int(x * ratio_w)
+            out_y = int(y * ratio_h)
+            output[out_x, out_y] = max(output[out_x, out_y], similarity)
         return output
 
     @property
@@ -259,7 +254,7 @@ class THORDiscreteEnvironment(Environment):
                 self.s_target, self.object_vector[curr_obj_id])
             # for x in range(value[0], value[2], 1):
             #     for y in range(value[1], value[3], 1):
-            bbox_location.append(((value), similarity))
+            bbox_location.append(((x, y), similarity))
         try:
             output = self._downsample_bbox(
                 (h, w), (self.mask_size, self.mask_size), bbox_location)
@@ -276,7 +271,18 @@ class THORDiscreteEnvironment(Environment):
         for key, value in self.boudingbox.items():
             keys = key.split('|')
             if keys[0] == self.terminal_state['object']:
-                bbox_location.append(((value), 1))
+                # Add bounding box if its the target object
+                # if keys[0] == self.terminal_state['object']:
+                # value[0] = start_x
+                # value[2] = end_x
+                x = value[0] + value[2]
+                x = x/2
+
+                # value[1] = start_y
+                # value[3] = end_y
+                y = value[1] + value[3]
+                y = y/2
+                bbox_location.append(((x, y), 1))
         try:
             output = self._downsample_bbox(
                 (h, w), (self.mask_size, self.mask_size), bbox_location)
