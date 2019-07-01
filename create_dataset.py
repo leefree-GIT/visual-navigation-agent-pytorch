@@ -12,8 +12,8 @@ from keras.applications import resnet50
 from PIL import Image
 from tqdm import tqdm
 
-# , "FloorPlan2", "FloorPlan201", "FloorPlan202", "FloorPlan301", "FloorPlan302", "FloorPlan401", "FloorPlan402"]
-names = ["FloorPlan1"]
+names = ["FloorPlan1", "FloorPlan2", "FloorPlan201", "FloorPlan202",
+         "FloorPlan301", "FloorPlan302", "FloorPlan401", "FloorPlan402"]
 grid_size = 0.5
 
 actions = ["MoveAhead", "RotateRight", "RotateLeft",
@@ -243,7 +243,6 @@ def create_states(h5_file, resnet_trained, controller, name, args):
                     # Store visible objects from the agent (visible = 1m away from the agent)
                     obj_visible = [obj['objectId']
                                    for obj in state.metadata['objects'] if obj['visible']]
-                    print(obj_visible)
                     state_struct = StateStruct(
                         idx,
                         state.metadata['agent']['position'],
@@ -292,6 +291,11 @@ def create_states(h5_file, resnet_trained, controller, name, args):
             del h5_file['bbox']
         h5_file.create_dataset(
             'bbox', data=[s.bbox.encode("ascii", "ignore") for s in states])
+
+        if 'object_visibility' in h5_file.keys():
+            del h5_file['object_visibility']
+        h5_file.create_dataset(
+            'object_visibility', data=[s.obj_visible.encode("ascii", "ignore") for s in states])
     return states
 
 
@@ -486,8 +490,6 @@ def main():
         create_shortest_path(h5_file, states, graph)
 
         h5_file.close()
-
-        return states, graph
 
 
 if __name__ == '__main__':
