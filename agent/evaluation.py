@@ -178,6 +178,7 @@ class Evaluation:
                     ep_actions = []
                     ep_start = []
                     ep_success = 0
+                    ep_spl = []
                     embedding_vectors = []
                     state_ids = list()
                     for i_episode in range(self.config['num_episode']):
@@ -251,8 +252,12 @@ class Evaluation:
                         ep_actions.append(actions)
                         ep_lengths.append(ep_t)
                         ep_rewards.append(ep_reward)
+
                         if ep_t <= 500:
                             ep_success = ep_success + 1
+                            # Compute SPL
+                            spl = env.shortest_path_terminal(ep_start[-1])/ep_t
+                            ep_spl.append(spl)
                         ep_collisions.append(ep_collision)
                         log.write("episode #{} ends after {} steps".format(
                             i_episode, ep_t))
@@ -268,6 +273,9 @@ class Evaluation:
                         (ep_success / self.config['num_episode']) * 100)
                     log.write('episode success: %.2f%%' %
                               ep_success_percent)
+
+                    log.write('episode SLP: %.2f' % (np.sum(
+                        ep_spl) / self.config['num_episode']))
                     log.write('')
                     scene_stats[scene_scope].extend(ep_lengths)
 
@@ -374,7 +382,8 @@ class Evaluation:
 
 '''
 # Load weights trained on tensorflow
-data = pickle.load(open(os.path.join(__file__, '..\\..\\weights.p'), 'rb'), encoding='latin1')
+data = pickle.load(
+    open(os.path.join(__file__, '..\\..\\weights.p'), 'rb'), encoding='latin1')
 def convertToStateDict(data):
     return {key:torch.Tensor(v) for (key, v) in data.items()}
 
