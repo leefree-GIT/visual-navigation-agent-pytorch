@@ -40,6 +40,7 @@ class THORDiscreteEnvironment(Environment):
         """
         super(THORDiscreteEnvironment, self).__init__()
 
+        # Load dataset name for this scene
         if h5_file_path is None:
             h5_file_path = f"/app/data/{scene_name}.h5"
         elif callable(h5_file_path):
@@ -47,34 +48,60 @@ class THORDiscreteEnvironment(Environment):
 
         self.scene = scene_name
 
+        # Store terminal state
         self.terminal_state = terminal_state
 
+        # Load dataset
         self.h5_file = h5py.File(h5_file_path, 'r')
 
+        # Number of resnet feature per location (1)
         self.n_feat_per_location = n_feat_per_location
 
+        # Number of stacked frame
         self.history_length = history_length
 
         self.locations = self.h5_file['location'][()]
         self.rotations = self.h5_file['rotation'][()]
-
         self.n_locations = self.locations.shape[0]
 
+        # State action graph
         self.transition_graph = self.h5_file['graph'][()]
 
+        # Number of possible action
         self.action_size = action_size
 
+        # Type of method used (word2vec, aop or target_driven)
         self.method = method
+
+        # Type of reward fun (bbox or step)
         self.reward_fun = reward
 
+        # Load object id dict
         self.object_ids = json.loads(self.h5_file.attrs['object_ids'])
+
+        # Load object resnet feature
         object_feature = self.h5_file['object_feature']
+
+        # Load object word embedding feature
         self.object_vector = self.h5_file['object_vector']
+
+        # Load shortest path distance between state
+        self.shortest_path_distance = self.h5_file['shortest_path_distance']
+
+        # Load object visibility
+        self.object_visibility = self.h5_file['object_visibility']
 
         self.bbox_area = 0
         self.max_bbox_area = 0
 
         self.time = 0
+
+        self.terminal_id = -1
+        terminal_pos = list(self.terminal_state['position'].values())
+        for term_id, loc in enumerate(self.locations):
+            if np.array_equal(loc, terminal_pos):
+                self.terminal_id = term_id
+                break
 
         # LAST instruction
         if self.method == 'word2vec':
@@ -103,7 +130,9 @@ class THORDiscreteEnvironment(Environment):
         while True:
             # Assure that Z value is 0
             if self.rotations[k][2] == 0:
-                break
+                # Assure that shortest path is higher than 5
+                if self.shortest_path_distance[k][self.terminal_id] > 5:
+                    break
             k = random.randrange(self.n_locations)
         # reset parameters
         self.current_state_id = k
@@ -177,8 +206,8 @@ class THORDiscreteEnvironment(Environment):
         h, w = input_shape
         out_h, out_w = output_shape
         # Between 0 and output_shape
-        out_h = out_h
-        out_w = out_w
+        out_h = out_h - 1
+        out_w = out_w - 1
 
         ratio_h = out_h / h
         ratio_w = out_w / w
@@ -290,6 +319,9 @@ class THORDiscreteEnvironment(Environment):
             print((h, w), bbox_location)
             raise e
         return output
+
+    def shortest_path_terminal(self, state):
+        return self.shortest_path_distance[state][self.terminal_id]
 
     @property
     def actions(self):
