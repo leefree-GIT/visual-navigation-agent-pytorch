@@ -100,8 +100,7 @@ class THORDiscreteEnvironment(Environment):
         self.terminal_id = -1
 
         self.last_action = -1
-
-        if self.reward_fun != 'soft_goal':
+        if self.reward_fun == 'soft_goal':
             self.terminal_id = -1
             for i, object_visibility in enumerate(self.object_visibility):
                 for objectId in object_visibility:

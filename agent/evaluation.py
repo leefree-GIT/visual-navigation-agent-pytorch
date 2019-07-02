@@ -240,13 +240,13 @@ class Evaluation:
 
                             env.step(action)
                             actions.append(action)
+                            ep_reward += env.reward
                             terminal = env.terminal
 
                             if ep_t == 5000:
                                 break
                             if env.collided:
                                 ep_collision += 1
-                            ep_reward += env.reward
                             ep_t += 1
 
                         ep_actions.append(actions)
