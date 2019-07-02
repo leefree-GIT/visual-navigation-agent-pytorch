@@ -1,0 +1,55 @@
+{
+  "description": "Text Description",
+  "task_list": {
+    "eval": {
+      "FloorPlan1": [
+        {
+          "object": "DishSponge"
+        },
+        {
+          "object": "Microwave"
+        },
+        {
+          "object": "Bowl"
+        },
+        {
+          "object": "CreditCard"
+        }
+      ]
+    },
+    "train": {
+      "FloorPlan1": [
+        {
+          "object": "SoapBottle"
+        },
+        {
+          "object": "Microwave"
+        },
+        {
+          "object": "Bread"
+        },
+        {
+          "object": "GarbageCan"
+        }
+      ]
+    }
+  },
+  "total_step": 5000000,
+  "h5_file_path": "./data/{scene}.h5",
+  "saving_period": 1000000,
+  "max_t": 5,
+  "action_size": 9,
+  "train_param": {
+    "cuda": true,
+    "num_thread": 8,
+    "use_resnet": false,
+    "gamma": 0.7,
+    "seed": 1993,
+    "reward": "soft_goal",
+    "mask_size": 16
+  },
+  "eval_param": {
+    "num_episode": 20
+  },
+  "method": "word2vec"
+}
