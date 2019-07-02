@@ -12,7 +12,7 @@ from agent.environment.environment import Environment
 class THORDiscreteEnvironment(Environment):
 
     acts = ["MoveAhead", "RotateRight", "RotateLeft", "MoveBack",
-            "LookUp", "LookDown", "MoveRight", "MoveLeft"]
+            "LookUp", "LookDown", "MoveRight", "MoveLeft", "Done"]
 
     def __init__(self,
                  method: str,
@@ -89,7 +89,8 @@ class THORDiscreteEnvironment(Environment):
         self.shortest_path_distance = self.h5_file['shortest_path_distance']
 
         # Load object visibility
-        self.object_visibility = self.h5_file['object_visibility']
+        self.object_visibility = [json.loads(j) for j in
+                                  self.h5_file['object_visibility']]
 
         self.bbox_area = 0
         self.max_bbox_area = 0
@@ -97,11 +98,24 @@ class THORDiscreteEnvironment(Environment):
         self.time = 0
 
         self.terminal_id = -1
-        terminal_pos = list(self.terminal_state['position'].values())
-        for term_id, loc in enumerate(self.locations):
-            if np.array_equal(loc, terminal_pos):
-                self.terminal_id = term_id
-                break
+
+        self.last_action = -1
+
+        if self.reward_fun != 'soft_goal':
+            self.terminal_id = -1
+            for i, object_visibility in enumerate(self.object_visibility):
+                for objectId in object_visibility:
+                    obj = objectId.split('|')
+                    if obj[0] == self.terminal_state['object']:
+                        self.terminal_id = i
+                        break
+
+        else:
+            terminal_pos = list(self.terminal_state['position'].values())
+            for term_id, loc in enumerate(self.locations):
+                if np.array_equal(loc, terminal_pos):
+                    self.terminal_id = term_id
+                    break
 
         # LAST instruction
         if self.method == 'word2vec':
@@ -147,23 +161,27 @@ class THORDiscreteEnvironment(Environment):
     def step(self, action):
         assert not self.terminal, 'step() called in terminal state'
         k = self.current_state_id
+        if self.acts[action] == "Done":
+            self.last_action = action
+            return
         if self.transition_graph[k][action] != -1:
             self.current_state_id = self.transition_graph[k][action]
-            agent_pos = self.locations[self.current_state_id]  # NDARRAY
-            # Check only y value
-            agent_rot = self.rotations[self.current_state_id][1]
+            if self.reward_fun != "soft_goal":
+                agent_pos = self.locations[self.current_state_id]  # NDARRAY
+                # Check only y value
+                agent_rot = self.rotations[self.current_state_id][1]
 
-            terminal_pos = list(
-                self.terminal_state['position'].values())  # NDARRAY
-            # Check only y value
-            terminal_rot = self.terminal_state['rotation']['y']
+                terminal_pos = list(
+                    self.terminal_state['position'].values())  # NDARRAY
+                # Check only y value
+                terminal_rot = self.terminal_state['rotation']['y']
 
-            if np.array_equal(agent_pos, terminal_pos) and np.array_equal(agent_rot, terminal_rot):
-                self.terminal = True
-                self.collided = False
-            else:
-                self.terminal = False
-                self.collided = False
+                if np.array_equal(agent_pos, terminal_pos) and np.array_equal(agent_rot, terminal_rot):
+                    self.terminal = True
+                    self.collided = False
+                else:
+                    self.terminal = False
+                    self.collided = False
         else:
             self.terminal = False
             self.collided = True
@@ -176,6 +194,7 @@ class THORDiscreteEnvironment(Environment):
             self.boudingbox, self.terminal_state['object'])
 
         self.time = self.time + 1
+        self.last_action = action
 
     def _get_state(self, state_id):
         # read from hdf5 cache
@@ -196,9 +215,10 @@ class THORDiscreteEnvironment(Environment):
                 area = max(area, w * h)
         return area
 
-    def _calculate_bbox_reward(self, bbox_area, max_bbox_area):
-        if bbox_area > max_bbox_area:
-            return bbox_area
+    def _calculate_bbox_reward(self):
+        if self.bbox_area > self.max_bbox_area:
+            self.max_bbox_area = self.bbox_area
+            return self.bbox_area
         else:
             return 0
 
@@ -225,15 +245,13 @@ class THORDiscreteEnvironment(Environment):
     @property
     def reward(self):
         if self.reward_fun == 'bbox':
-            reward_ = self._calculate_bbox_reward(
-                self.bbox_area, self.max_bbox_area)
-
-            if reward_ != 0:
-                self.max_bbox_area = reward_
+            reward_ = self._calculate_bbox_reward()
             return reward_
 
         elif self.reward_fun == 'step':
             return 10.0 if self.terminal else -0.01
+        elif self.reward_fun == 'soft_goal':
+            return self.reward_soft_goal()
 
     @property
     def is_terminal(self):
@@ -329,3 +347,28 @@ class THORDiscreteEnvironment(Environment):
 
     def stop(self):
         pass
+
+    def reward_soft_goal(self):
+        GOAL_SUCCESS_REWARD = 5
+        STEP_PENALTY = -0.01
+        # BBOX area
+        reward_ = self._calculate_bbox_reward()
+
+        h, w, _ = np.shape(self.h5_file['observation'][0])
+
+        # Normalize
+        reward_ = reward_ / (h*w)
+
+        if self.acts[self.last_action] == 'Done':
+
+            # Check if object is visible
+            for objectId in self.object_visibility[self.current_state_id]:
+                obj = objectId.split('|')
+                if obj[0] == self.terminal_state['object']:
+                    reward_ = reward_ + GOAL_SUCCESS_REWARD
+                    self.terminal = True
+                    break
+        else:
+            reward_ = reward_ + STEP_PENALTY
+
+        return reward_

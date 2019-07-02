@@ -234,11 +234,11 @@ class TrainingThread(mp.Process):
             # Save action for this episode
             self.saved_actions.append(action)
 
-            # Receives the game reward
-            is_terminal = self.env.is_terminal
-
             # ad-hoc reward for navigation
             reward = self.env.reward
+
+            # Receives the game reward
+            is_terminal = self.env.is_terminal
 
             # Max episode length
             if self.episode_length > 5e3:

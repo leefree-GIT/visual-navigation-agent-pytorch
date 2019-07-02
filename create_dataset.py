@@ -327,7 +327,7 @@ def create_graph(h5_file, states, controller, args):
                         states, state_controller_named)
                     if found is None:
                         # print(state_controller_named)
-                        print("Error, state not found")
+                        # print("Error, state not found")
                         # exit()
                         continue
                     graph[state.id][i] = found.id
