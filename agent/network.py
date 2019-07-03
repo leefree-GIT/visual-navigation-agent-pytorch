@@ -36,32 +36,6 @@ class DQN(nn.Module):
         return self.head(x.view(x.size(0), -1))
 
 
-class SharedResnet(nn.Module):
-    def __init__(self, resnet):
-        super(SharedResnet, self).__init__()
-
-        self.resnet_model = resnet
-        for p in self.resnet_model.parameters():
-            p.requires_grad = False
-        self.resnet_model = self.resnet_model.eval()
-        self.avg_pool2D = nn.AdaptiveAvgPool2d((1, 1))
-
-    def forward(self, inp):
-        with torch.no_grad():
-
-            x = self.resnet_model(inp)
-            x = self.avg_pool2D(x)
-            x = x.view(-1).unsqueeze(1)
-
-            return x
-
-    def load_resnet_pretrained(self, state_dict_trained):
-        self.resnet.load_state_dict(state_dict_trained)
-        for p in self.resnet.parameters():
-            p.requires_grad = False
-        self.resnet.eval()
-
-
 class SharedNetwork(nn.Module):
     def __init__(self, method, mask_size=5):
         super(SharedNetwork, self).__init__()

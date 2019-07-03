@@ -12,20 +12,14 @@ import torch.nn as nn
 
 from agent.environment.ai2thor_file import \
     THORDiscreteEnvironment as THORDiscreteEnvironmentFile
-from agent.environment.ai2thor_real import \
-    THORDiscreteEnvironment as THORDiscreteEnvironmentReal
 from agent.gpu_thread import GPUThread
-from agent.network import SceneSpecificNetwork, SharedNetwork, SharedResnet
+from agent.network import SceneSpecificNetwork, SharedNetwork
 from agent.optim import SharedRMSprop
 from agent.summary_thread import SummaryThread
 from agent.training_thread import TrainingThread
 from agent.utils import get_first_free_gpu
 
 logging.basicConfig(level=logging.DEBUG)
-
-MainModel = imp.load_source('MainModel', "agent/resnet/resnet50.py")
-
-# Preprocess obs to match resnet input
 
 
 class TrainingSaver:
@@ -260,45 +254,22 @@ class Training:
                 it = it + 1
                 branches.append((scene, target))
 
-        # If True use resnet to extract feature
-        # If False use precomputed one
-        use_resnet = self.config['use_resnet']
-        print(f"Resnet {use_resnet}")
-
-        def _createThread(id, task, i_queue, o_queue, evt, summary_queue, device):
+        def _createThread(id, task, summary_queue, device):
             (scene, target) = task
             net = nn.Sequential(self.shared_network,
                                 self.scene_networks[scene])
             net.share_memory()
 
-            if use_resnet:
-                return TrainingThread(
-                    id=id,
-                    optimizer=self.optimizer,
-                    network=net,
-                    scene=scene,
-                    saver=self.saver,
-                    terminal_state=target,
-                    device=device,
-                    input_queue=i_queue,
-                    output_queue=o_queue,
-                    evt=evt,
-                    summary_queue=summary_queue,
-                    **self.config)
-            else:
-                return TrainingThread(
-                    id=id,
-                    optimizer=self.optimizer,
-                    network=net,
-                    scene=scene,
-                    saver=self.saver,
-                    terminal_state=target,
-                    device=device,
-                    input_queue=i_queue,
-                    output_queue=o_queue,
-                    evt=evt,
-                    summary_queue=summary_queue,
-                    **self.config)
+            return TrainingThread(
+                id=id,
+                optimizer=self.optimizer,
+                network=net,
+                scene=scene,
+                saver=self.saver,
+                terminal_state=target,
+                device=device,
+                summary_queue=summary_queue,
+                **self.config)
 
         # Retrieve number of task
         num_scene_task = len(branches)
@@ -309,48 +280,20 @@ class Training:
 
         self.threads = []
 
-        # Queues will be used to pass feature to GPUThread, one to send, one to receive per Process
-        input_queues = []
-        output_queues = []
+        # Queues will be used to pass info to summary thread
         summary_queue = mp.Queue()
-        evt = mp.Event()
-        for i in range(self.num_thread):
-            input_queue = mp.Queue()
-            output_queue = mp.Queue()
-            input_queues.append(input_queue)
-            output_queues.append(output_queue)
 
         # Create a summary thread to log
-        if use_resnet:
-            actions = THORDiscreteEnvironmentReal.acts[:self.config['action_size']]
-            self.summary = SummaryThread(
-                self.config['log_path'], summary_queue, actions)
-            del actions
-        else:
-            actions = THORDiscreteEnvironmentFile.acts[:self.config['action_size']]
-            self.summary = SummaryThread(
-                self.config['log_path'], summary_queue, actions)
-            del actions
-
-        # Create GPUThread to handle feature computation
-        if use_resnet:
-            # Download pretrained resnet
-            resnet_trained_pytorch = torch.load('agent/resnet/resnet50.pth')
-            resnet_trained_pytorch.eval()
-            resnet_custom = SharedResnet(resnet_trained_pytorch)
-            h5_file_path = self.config.get('h5_file_path')
-            self.gpu = GPUThread(resnet_custom, self.device, input_queues, output_queues, list(
-                self.tasks.keys()), h5_file_path, evt)
+        actions = THORDiscreteEnvironmentFile.acts[:self.config['action_size']]
+        self.summary = SummaryThread(
+            self.config['log_path'], summary_queue, actions)
+        del actions
 
         # self.threads = [_createThread(i, task) for i, task in enumerate(branches)]
         print(f"Running for {self.total_epochs}")
         try:
             # Start the logger thread
             self.summary.start()
-
-            # Start the gpu thread
-            if use_resnet:
-                self.gpu.start()
 
             for i in range(self.num_thread):
                 if self.config['cuda']:
@@ -362,7 +305,7 @@ class Training:
                 else:
                     device = torch.device("cpu")
                 self.threads.append(_createThread(
-                    i, branches[i % num_scene_task], output_queues[i], input_queues[i], evt, summary_queue, device))
+                    i, branches[i % num_scene_task], summary_queue, device))
                 self.threads[-1].start()
                 if self.config['cuda']:
                     # Wait for cuda init
@@ -371,11 +314,6 @@ class Training:
             # Wait for agent
             for thread in self.threads:
                 thread.join()
-
-            # Wait for GPUThread
-            if use_resnet:
-                self.gpu.stop()
-                self.gpu.join()
 
             # Wait for logger
             self.summary.stop()
@@ -391,9 +329,6 @@ class Training:
             for thread in self.threads:
                 thread.stop()
                 thread.join()
-            if use_resnet:
-                self.gpu.stop()
-                self.gpu.join()
 
             self.summary.stop()
             self.summary.join()

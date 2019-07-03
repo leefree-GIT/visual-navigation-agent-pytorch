@@ -122,7 +122,6 @@
   "train_param": {
     "cuda": true,
     "num_thread": 8,
-    "use_resnet": false,
     "gamma": 0.99,
     "seed": 1993,
     "reward": "step"

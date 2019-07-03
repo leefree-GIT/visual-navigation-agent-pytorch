@@ -29,14 +29,10 @@ class THORDiscreteEnvironment(Environment):
 
         Keyword Arguments:
             scene_name {str} -- Name of the current world (default: {'bedroom_04'})
-            resnet_trained {[type]} -- Resnet network used to compute features (default: {None})
             n_feat_per_location {int} -- Number of feature by position in the world (default: {1})
             history_length {int} -- Number of frame to stack so the network take in account previous observations (default: {4})
             terminal_state_id {int} -- Terminal position represented by an ID (default: {0})
             h5_file_path {[type]} -- Path to precomputed world (default: {None})
-            input_queue {mp.Queue} -- Input queue to receive resnet features (default: {None})
-            output_queue {mp.Queue} -- Output queue to ask for resnet features (default: {None})
-            evt {mp.Event} -- Event to tell the GPUThread that there are new data to compute (default: {None})
         """
         super(THORDiscreteEnvironment, self).__init__()
 

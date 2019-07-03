@@ -14,8 +14,6 @@ import torch.nn.functional as F
 
 from agent.environment.ai2thor_file import \
     THORDiscreteEnvironment as THORDiscreteEnvironmentFile
-from agent.environment.ai2thor_real import \
-    THORDiscreteEnvironment as THORDiscreteEnvironmentReal
 from agent.network import ActorCriticLoss, SceneSpecificNetwork, SharedNetwork
 
 
@@ -52,9 +50,6 @@ class TrainingThread(mp.Process):
                  saver,
                  optimizer,
                  scene: str,
-                 input_queue: mp.Queue,
-                 output_queue: mp.Queue,
-                 evt,
                  summary_queue: mp.Queue,
                  device,
                  method: str,
@@ -68,9 +63,6 @@ class TrainingThread(mp.Process):
             saver {[type]} -- saver utils to to save checkpoint
             optimizer {[type]} -- Optimizer to use
             scene {str} -- Name of the current world
-            input_queue {mp.Queue} -- Input queue to receive resnet features
-            output_queue {mp.Queue} -- Output queue to ask for resnet features
-            evt {[type]} -- Event to tell the GPUThread that there are new data to compute
             summary_queue {mp.Queue} -- Queue to pass scalar to tensorboard logger
         """
 
@@ -89,9 +81,6 @@ class TrainingThread(mp.Process):
 
         self.exit = mp.Event()
         self.local_t = 0
-        self.i_queue = input_queue
-        self.o_queue = output_queue
-        self.evt = evt
 
         self.summary_queue = summary_queue
         self.method = method
@@ -123,20 +112,10 @@ class TrainingThread(mp.Process):
 
         self.mask_size = self.init_args.get('mask_size', 5)
 
-        if self.init_args['use_resnet']:
-            self.env = THORDiscreteEnvironmentReal(scene_name=self.scene,
-                                                   input_queue=self.i_queue,
-                                                   output_queue=self.o_queue,
-                                                   evt=self.evt,
-                                                   **self.init_args)
-        else:
-            self.env = THORDiscreteEnvironmentFile(scene_name=self.scene,
-                                                   method=self.method,
-                                                   reward=self.reward,
-                                                   input_queue=self.i_queue,
-                                                   output_queue=self.o_queue,
-                                                   evt=self.evt,
-                                                   **self.init_args)
+        self.env = THORDiscreteEnvironmentFile(scene_name=self.scene,
+                                               method=self.method,
+                                               reward=self.reward,
+                                               **self.init_args)
 
         self.gamma: float = self.init_args.get('gamma', 0.99)
         self.grad_norm: float = self.init_args.get('grad_norm', 40.0)
@@ -412,12 +391,10 @@ class TrainingThread(mp.Process):
                 # pass
             self.stop()
             self.env.stop()
-            # compare_models(self.resnet_model.resnet, self.resnet_network)
         except Exception as e:
             # self.logger.error(e.msg)
             raise e
 
     def stop(self):
         print("Stop initiated")
-        self.evt.set()
         self.exit.set()

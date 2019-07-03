@@ -17,14 +17,10 @@ from tensorboardX import SummaryWriter
 
 from agent.environment.ai2thor_file import \
     THORDiscreteEnvironment as THORDiscreteEnvironmentFile
-from agent.environment.ai2thor_real import \
-    THORDiscreteEnvironment as THORDiscreteEnvironmentReal
 from agent.gpu_thread import GPUThread
-from agent.network import SceneSpecificNetwork, SharedNetwork, SharedResnet
+from agent.network import SceneSpecificNetwork, SharedNetwork
 from agent.training import TrainingSaver
 from agent.utils import find_restore_points
-
-MainModel = imp.load_source('MainModel', "agent/resnet/resnet50.py")
 
 
 def prepare_csv(file, scene_task):
@@ -107,24 +103,6 @@ class Evaluation:
         self.checkpoint_id = (self.checkpoint_id + 1) % len(self.checkpoints)
 
     def run(self, show=False):
-        use_resnet = self.config.get("use_resnet")
-        if use_resnet:
-            mp.set_start_method('spawn')
-            device = torch.device("cuda")
-            # Download pretrained resnet
-            resnet_trained_pytorch = torch.load('agent/resnet/resnet50.pth')
-            resnet_custom = SharedResnet(resnet_trained_pytorch)
-            resnet_custom.to(device)
-            resnet_custom.share_memory()
-
-            input_queue = mp.Queue()
-            output_queue = mp.Queue()
-            h5_file_path = self.config.get('h5_file_path')
-            evt = mp.Event()
-            gpu_thread = GPUThread(resnet_custom, device, [input_queue], [
-                                   output_queue], list(self.config['task_list'].keys()), h5_file_path, evt)
-            gpu_thread.start()
-
         # Create csv writer with correct header
         if self.config['train']:
             writer_csv = prepare_csv(
@@ -150,27 +128,16 @@ class Evaluation:
                 scene_stats[scene_scope] = list()
 
                 for task_scope in items:
-                    if use_resnet:
-                        env = THORDiscreteEnvironmentReal(
-                            scene_name=scene_scope,
-                            input_queue=output_queue,
-                            output_queue=input_queue,
-                            evt=evt,
-                            use_resnet=use_resnet,
-                            h5_file_path=(lambda scene: self.config.get(
-                                "h5_file_path", "D:\\datasets\\visual_navigation_precomputed\\{scene}.h5").replace('{scene}', scene)),
-                            terminal_state_id=int(task_scope)
-                        )
-                    else:
-                        env = THORDiscreteEnvironmentFile(scene_name=scene_scope,
-                                                          method=self.method,
-                                                          reward=self.config['reward'],
-                                                          h5_file_path=(lambda scene: self.config.get(
-                                                              "h5_file_path").replace('{scene}', scene)),
-                                                          terminal_state=task_scope,
-                                                          action_size=self.config['action_size'],
-                                                          mask_size=self.config.get(
-                                                              'mask_size', 5))
+
+                    env = THORDiscreteEnvironmentFile(scene_name=scene_scope,
+                                                      method=self.method,
+                                                      reward=self.config['reward'],
+                                                      h5_file_path=(lambda scene: self.config.get(
+                                                          "h5_file_path").replace('{scene}', scene)),
+                                                      terminal_state=task_scope,
+                                                      action_size=self.config['action_size'],
+                                                      mask_size=self.config.get(
+                                                          'mask_size', 5))
 
                     ep_rewards = []
                     ep_lengths = []
@@ -385,9 +352,6 @@ class Evaluation:
                           (scene_scope, np.mean(scene_stats[scene_scope])))
             # Write data to csv
             writer_csv.writerow(list(resultData))
-        if use_resnet:
-            gpu_thread.stop()
-            gpu_thread.join()
 
 
 '''
