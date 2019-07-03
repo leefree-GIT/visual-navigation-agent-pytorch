@@ -262,35 +262,39 @@ class TrainingThread(mp.Process):
             rollout_path["rewards"].append(reward)
             rollout_path["done"].append(is_terminal)
 
+            # Episode is terminal
+            # soft goal: means that the agent emits the done signal
+            # other method: agent reach goal position
             if is_terminal:
-                print(
-                    f"time {self.optimizer.get_global_step() * self.max_t} | thread #{self.id} | scene {self.scene} | target #{self.env.terminal_state['object']}")
-
-                print('playout finished')
-                print(f'episode length: {self.episode_length}')
-                # print(f'episode shortest length: {self.env.shortest_path_distance_start}')
-                print(f'episode reward: {self.episode_reward}')
-                print(
-                    f'episode max_q: {self.episode_max_q.detach().cpu().numpy()[0]}')
-
                 scene_log = self.scene + '-' + \
                     str(self.init_args['terminal_state']['object'])
                 step = self.optimizer.get_global_step() * self.max_t
 
-                # Send info to logger thread
-                self.summary_queue.put(
-                    (scene_log + '/episode_length', self.episode_length, step))
+                if self.env.success:
+                    print(
+                        f"time {self.optimizer.get_global_step() * self.max_t} | thread #{self.id} | scene {self.scene} | target #{self.env.terminal_state['object']}")
+
+                    print(f'playout finished, success : {self.env.success}')
+                    print(f'episode length: {self.episode_length}')
+                    # print(f'episode shortest length: {self.env.shortest_path_distance_start}')
+                    print(f'episode reward: {self.episode_reward}')
+                    print(
+                        f'episode max_q: {self.episode_max_q.detach().cpu().numpy()[0]}')
+
+                    hist_action, _ = np.histogram(
+                        self.saved_actions, bins=self.action_space_size, density=False)
+                    self.summary_queue.put(
+                        (scene_log + '/actions', hist_action, step))
+
+                    # Send info to logger thread
+                    self.summary_queue.put(
+                        (scene_log + '/episode_length', self.episode_length, step))
                 self.summary_queue.put(
                     (scene_log + '/max_q', float(self.episode_max_q.detach().cpu().numpy()[0]), step))
                 self.summary_queue.put(
                     (scene_log + '/reward', float(self.episode_reward), step))
                 self.summary_queue.put(
                     (scene_log + '/learning_rate', float(self.optimizer.scheduler.get_lr()[0]), step))
-
-                hist_action, _ = np.histogram(
-                    self.saved_actions, bins=self.action_space_size, density=False)
-                self.summary_queue.put(
-                    (scene_log + '/actions', hist_action, step))
 
                 terminal_end = True
                 self._reset_episode()

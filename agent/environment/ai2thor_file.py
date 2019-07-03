@@ -100,7 +100,13 @@ class THORDiscreteEnvironment(Environment):
         self.terminal_id = -1
 
         self.last_action = -1
+
+        self.success = False
+
         if self.reward_fun == 'soft_goal':
+            if "Done" not in self.acts[:self.action_size]:
+                print("ERROR: Done action need to be sued with soft goal")
+                exit()
             self.terminal_id = -1
             for i, object_visibility in enumerate(self.object_visibility):
                 for objectId in object_visibility:
@@ -144,7 +150,7 @@ class THORDiscreteEnvironment(Environment):
             # Assure that Z value is 0
             if self.rotations[k][2] == 0:
                 # Assure that shortest path is higher than 5
-                if self.shortest_path_distance[k][self.terminal_id] > 5:
+                if self.shortest_path_terminal(k) > 5:
                     break
             k = random.randrange(self.n_locations)
         # reset parameters
@@ -156,6 +162,7 @@ class THORDiscreteEnvironment(Environment):
         self.bbox_area = 0
         self.max_bbox_area = 0
         self.time = 0
+        self.success = False
 
     def step(self, action):
         assert not self.terminal, 'step() called in terminal state'
@@ -177,6 +184,7 @@ class THORDiscreteEnvironment(Environment):
 
                 if np.array_equal(agent_pos, terminal_pos) and np.array_equal(agent_rot, terminal_rot):
                     self.terminal = True
+                    self.success = True
                     self.collided = False
                 else:
                     self.terminal = False
@@ -338,7 +346,19 @@ class THORDiscreteEnvironment(Environment):
         return output
 
     def shortest_path_terminal(self, state):
-        return self.shortest_path_distance[state][self.terminal_id]
+
+        if self.reward_fun == 'soft_goal':
+            lengths = []
+            for i, object_visibility in enumerate(self.object_visibility):
+                for objectId in object_visibility:
+                    obj = objectId.split('|')
+                    if obj[0] == self.terminal_state['object']:
+                        lengths.append(self.shortest_path_distance[state][i])
+                        break
+
+            return np.min(lengths)
+        else:
+            return self.shortest_path_distance[state][self.terminal_id]
 
     @property
     def actions(self):
@@ -358,14 +378,18 @@ class THORDiscreteEnvironment(Environment):
         # Normalize
         reward_ = reward_ / (h*w)
 
+        # Use strict done
+        # Emitted Done signal will trigger end of episode
+        # Giving big reward only if object is visible
         if self.acts[self.last_action] == 'Done':
-
+            self.success = False
+            self.terminal = True
             # Check if object is visible
             for objectId in self.object_visibility[self.current_state_id]:
                 obj = objectId.split('|')
                 if obj[0] == self.terminal_state['object']:
                     reward_ = reward_ + GOAL_SUCCESS_REWARD
-                    self.terminal = True
+                    self.success = True
                     break
         else:
             reward_ = reward_ + STEP_PENALTY

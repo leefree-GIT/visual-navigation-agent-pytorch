@@ -252,8 +252,18 @@ class Evaluation:
                         ep_actions.append(actions)
                         ep_lengths.append(ep_t)
                         ep_rewards.append(ep_reward)
+                        if self.config['reward'] == 'soft_goal':
+                            if env.success:
+                                ep_success = ep_success + 1
+                                spl = env.shortest_path_terminal(
+                                    ep_start[-1])/ep_t
+                                ep_spl.append(spl)
+                            else:
+                                ep_actions = ep_actions[:-1]
+                                ep_lengths = ep_lengths[:-1]
+                                ep_rewards = ep_rewards[:-1]
 
-                        if ep_t <= 500:
+                        elif ep_t <= 500:
                             ep_success = ep_success + 1
                             # Compute SPL
                             spl = env.shortest_path_terminal(ep_start[-1])/ep_t
