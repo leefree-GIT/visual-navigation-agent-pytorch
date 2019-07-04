@@ -251,7 +251,7 @@ class THORDiscreteEnvironment(Environment):
 
     @property
     def is_terminal(self):
-        return self.terminal or self.time >= 5e3
+        return self.terminal or self.time >= 200
 
     @property
     def observation(self):
@@ -344,8 +344,8 @@ class THORDiscreteEnvironment(Environment):
                     if obj[0] == self.terminal_state['object']:
                         lengths.append(self.shortest_path_distance[state][i])
                         break
-
-            return np.min(lengths)
+            min_len = np.min(lengths)
+            return min_len
         else:
             return self.shortest_path_distance[state][self.terminal_id]
 

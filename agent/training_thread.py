@@ -229,7 +229,7 @@ class TrainingThread(mp.Process):
             is_terminal = self.envs[idx].is_terminal
 
             # Max episode length
-            if self.episode_length > 5e3:
+            if self.episode_length > 200:
                 is_terminal = True
 
             # Update episode stats
