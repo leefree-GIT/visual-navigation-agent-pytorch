@@ -1,6 +1,7 @@
 import logging
 import os
 import pdb
+import random
 import signal
 import sys
 from collections import namedtuple
@@ -46,15 +47,15 @@ class TrainingThread(mp.Process):
 
     def __init__(self,
                  id: int,
-                 network: torch.nn.Module,
+                 networks: dict,
                  saver,
                  optimizer,
-                 scene: str,
                  summary_queue: mp.Queue,
                  device,
                  method: str,
                  reward: str,
-                 **kwargs):
+                 tasks: list,
+                 kwargs):
         """TrainingThread constructor
 
         Arguments:
@@ -69,14 +70,13 @@ class TrainingThread(mp.Process):
         super(TrainingThread, self).__init__()
 
         # Initialize the environment
-        self.env = None
+        self.envs = None
         self.init_args = kwargs
-        self.scene = scene
         self.saver = saver
         self.id = id
         self.device = device
 
-        self.master_network = network
+        self.master_network = networks
         self.optimizer = optimizer
 
         self.exit = mp.Event()
@@ -85,18 +85,20 @@ class TrainingThread(mp.Process):
         self.summary_queue = summary_queue
         self.method = method
         self.reward = reward
+        self.tasks = tasks
+        self.scenes = set([scene for (scene, target) in tasks])
 
-    def _sync_network(self):
+    def _sync_network(self, scene):
         if self.init_args['cuda']:
             with torch.cuda.device(self.device):
-                state_dict = self.master_network.state_dict()
-                self.policy_network.load_state_dict(state_dict)
+                state_dict = self.master_network[scene].state_dict()
+                self.policy_networks[scene].load_state_dict(state_dict)
         else:
-            state_dict = self.master_network.state_dict()
-            self.policy_network.load_state_dict(state_dict)
+            state_dict = self.master_network[scene].state_dict()
+            self.policy_networks[scene].load_state_dict(state_dict)
 
     def get_action_space_size(self):
-        return len(self.env.actions)
+        return len(self.envs[0].actions)
 
     def _initialize_thread(self):
         # Disable OMP
@@ -112,10 +114,15 @@ class TrainingThread(mp.Process):
 
         self.mask_size = self.init_args.get('mask_size', 5)
 
-        self.env = THORDiscreteEnvironmentFile(scene_name=self.scene,
-                                               method=self.method,
-                                               reward=self.reward,
-                                               **self.init_args)
+        args = self.init_args
+        args.pop("reward")
+        args.pop("method")
+        self.envs = [THORDiscreteEnvironmentFile(method=self.method,
+                                                 reward=self.reward,
+                                                 scene_name=scene,
+                                                 terminal_state=task,
+                                                 **args)
+                     for (scene, task) in self.tasks]
 
         self.gamma: float = self.init_args.get('gamma', 0.99)
         self.grad_norm: float = self.init_args.get('grad_norm', 40.0)
@@ -126,23 +133,25 @@ class TrainingThread(mp.Process):
 
         self.criterion = ActorCriticLoss(entropy_beta)
 
-        self.policy_network = nn.Sequential(
-            SharedNetwork(self.method, self.mask_size), SceneSpecificNetwork(self.get_action_space_size()))
-        self.policy_network = self.policy_network.to(self.device)
+        self.policy_networks = {scene: nn.Sequential(
+            SharedNetwork(self.method, self.mask_size), SceneSpecificNetwork(self.get_action_space_size())).to(self.device)
+            for scene in self.scenes}
         # Store action for each episode
         self.saved_actions = []
         # Initialize the episode
-        self._reset_episode()
-        self._sync_network()
+        for idx, _ in enumerate(self.envs):
+            self._reset_episode(idx)
+        for scene in self.scenes:
+            self._sync_network(scene)
 
-    def _reset_episode(self):
+    def _reset_episode(self, idx):
         self.saved_actions = []
         self.episode_reward = 0
         self.episode_length = 0
         self.episode_max_q = torch.FloatTensor([-np.inf]).to(self.device)
-        self.env.reset()
+        self.envs[idx].reset()
 
-    def _forward_explore(self):
+    def _forward_explore(self, scene, idx):
         # Does the evaluation end naturally?
         is_terminal = False
         terminal_end = False
@@ -156,20 +165,20 @@ class TrainingThread(mp.Process):
             # Resnet feature are extracted or computed here
             if self.method == 'word2vec':
                 state = {
-                    "current": self.env.render('resnet_features'),
-                    "goal": self.env.render_target('word_features'),
-                    "object_mask": self.env.render_mask_similarity()
+                    "current": self.envs[idx].render('resnet_features'),
+                    "goal": self.envs[idx].render_target('word_features'),
+                    "object_mask": self.envs[idx].render_mask_similarity()
                 }
             elif self.method == 'aop':
                 state = {
-                    "current": self.env.render('resnet_features'),
-                    "goal": self.env.render_target('word_features'),
-                    "object_mask": self.env.render_mask()
+                    "current": self.envs[idx].render('resnet_features'),
+                    "goal": self.envs[idx].render_target('word_features'),
+                    "object_mask": self.envs[idx].render_mask()
                 }
             elif self.method == 'target_driven':
                 state = {
-                    "current": self.env.render('resnet_features'),
-                    "goal": self.env.render_target('resnet_features'),
+                    "current": self.envs[idx].render('resnet_features'),
+                    "goal": self.envs[idx].render_target('resnet_features'),
                 }
 
             if self.method == 'word2vec' or self.method == 'aop':
@@ -181,7 +190,7 @@ class TrainingThread(mp.Process):
                 goal_processed = goal_processed.to(self.device)
                 object_mask = object_mask.to(self.device)
 
-                (policy, value) = self.policy_network(
+                (policy, value) = self.policy_networks[scene](
                     (x_processed, goal_processed, object_mask,))
             elif self.method == 'target_driven':
                 x_processed = torch.from_numpy(state["current"])
@@ -190,7 +199,7 @@ class TrainingThread(mp.Process):
                 x_processed = x_processed.to(self.device)
                 goal_processed = goal_processed.to(self.device)
 
-                (policy, value) = self.policy_network(
+                (policy, value) = self.policy_networks[scene](
                     (x_processed, goal_processed,))
 
             if (self.id == 0) and (self.local_t % 100) == 0:
@@ -208,16 +217,16 @@ class TrainingThread(mp.Process):
             value = value.data  # .numpy()
 
             # Makes the step in the environment
-            self.env.step(action)
+            self.envs[idx].step(action)
 
             # Save action for this episode
             self.saved_actions.append(action)
 
             # ad-hoc reward for navigation
-            reward = self.env.reward
+            reward = self.envs[idx].reward
 
             # Receives the game reward
-            is_terminal = self.env.is_terminal
+            is_terminal = self.envs[idx].is_terminal
 
             # Max episode length
             if self.episode_length > 5e3:
@@ -245,17 +254,21 @@ class TrainingThread(mp.Process):
             # soft goal: means that the agent emits the done signal
             # other method: agent reach goal position
             if is_terminal:
-                scene_log = self.scene + '-' + \
-                    str(self.init_args['terminal_state']['object'])
+                (_, task) = self.tasks[idx]
+                scene_log = scene + '-' + \
+                    str(task['object'])
                 step = self.optimizer.get_global_step() * self.max_t
 
-                if self.env.success:
+                if self.envs[idx].success:
                     print(
-                        f"time {self.optimizer.get_global_step() * self.max_t} | thread #{self.id} | scene {self.scene} | target #{self.env.terminal_state['object']}")
+                        f"time {self.optimizer.get_global_step() * self.max_t} | thread #{self.id} | scene {scene} | target #{self.envs[idx].terminal_state['object']}")
 
-                    print(f'playout finished, success : {self.env.success}')
-                    print(f'episode length: {self.episode_length}')
-                    # print(f'episode shortest length: {self.env.shortest_path_distance_start}')
+                    print(
+                        f'playout finished, success : {self.envs[idx].success}')
+                    print(
+                        f'episode length: {self.episode_length}')
+
+                    # print(f'episode shortest length: {self.envs[idx].shortest_path_distance_start}')
                     print(f'episode reward: {self.episode_reward}')
                     print(
                         f'episode max_q: {self.episode_max_q.detach().cpu().numpy()[0]}')
@@ -276,28 +289,28 @@ class TrainingThread(mp.Process):
                     (scene_log + '/learning_rate', float(self.optimizer.scheduler.get_lr()[0]), step))
 
                 terminal_end = True
-                self._reset_episode()
+                self._reset_episode(idx)
                 break
 
         if terminal_end:
-            return 0.0, results, rollout_path
+            return 0.0, results, rollout_path, terminal_end
         else:
             if self.method == 'word2vec':
                 state = {
-                    "current": self.env.render('resnet_features'),
-                    "goal": self.env.render_target('word_features'),
-                    "object_mask": self.env.render_mask_similarity()
+                    "current": self.envs[idx].render('resnet_features'),
+                    "goal": self.envs[idx].render_target('word_features'),
+                    "object_mask": self.envs[idx].render_mask_similarity()
                 }
             elif self.method == 'aop':
                 state = {
-                    "current": self.env.render('resnet_features'),
-                    "goal": self.env.render_target('word_features'),
-                    "object_mask": self.env.render_mask()
+                    "current": self.envs[idx].render('resnet_features'),
+                    "goal": self.envs[idx].render_target('word_features'),
+                    "object_mask": self.envs[idx].render_mask()
                 }
             elif self.method == 'target_driven':
                 state = {
-                    "current": self.env.render('resnet_features'),
-                    "goal": self.env.render_target('resnet_features'),
+                    "current": self.envs[idx].render('resnet_features'),
+                    "goal": self.envs[idx].render_target('resnet_features'),
                 }
             if self.method == 'word2vec' or self.method == 'aop':
                 x_processed = torch.from_numpy(state["current"])
@@ -308,7 +321,7 @@ class TrainingThread(mp.Process):
                 goal_processed = goal_processed.to(self.device)
                 object_mask = object_mask.to(self.device)
 
-                (policy, value) = self.policy_network(
+                (policy, value) = self.policy_networks[scene](
                     (x_processed, goal_processed, object_mask,))
             elif self.method == 'target_driven':
                 x_processed = torch.from_numpy(state["current"])
@@ -317,11 +330,11 @@ class TrainingThread(mp.Process):
                 x_processed = x_processed.to(self.device)
                 goal_processed = goal_processed.to(self.device)
 
-                (policy, value) = self.policy_network(
+                (policy, value) = self.policy_networks[scene](
                     (x_processed, goal_processed,))
-            return value.data.item(), results, rollout_path
+            return value.data.item(), results, rollout_path, terminal_end
 
-    def _optimize_path(self, playout_reward: float, results, rollout_path):
+    def _optimize_path(self, scene, playout_reward: float, results, rollout_path):
         policy_batch = []
         value_batch = []
         action_batch = []
@@ -358,8 +371,8 @@ class TrainingThread(mp.Process):
 
         # loss_value = loss.detach().numpy()
         self.optimizer.optimize(loss,
-                                self.policy_network,
-                                self.master_network,
+                                self.policy_networks[scene],
+                                self.master_network[scene],
                                 self.init_args['cuda'])
 
     def run(self, master=None):
@@ -376,21 +389,43 @@ class TrainingThread(mp.Process):
             print(f'Thread {self.id} started')
 
         try:
-            self.env.reset()
-            while True and not self.exit.is_set() and self.optimizer.get_global_step() * self.max_t < self.init_args["total_step"]:
-                self._sync_network()
-                # Plays some samples
-                playout_reward, results, rollout_path = self._forward_explore()
-                # Train on collected samples
-                self._optimize_path(playout_reward, results, rollout_path)
-                if (self.id == 0) and (self.optimizer.get_global_step() % 100) == 0:
-                    print(f'Global Step {self.optimizer.get_global_step()}')
+            # random task order
+            idx = [j for j in range(len(self.tasks))]
+            random.shuffle(idx)
+            j = 0
 
-                # Trigger save or other
-                self.saver.after_optimization(self.id)
+            # reset all env
+            [env.reset() for env in self.envs]
+            while True and not self.exit.is_set() and self.optimizer.get_global_step() * self.max_t < self.init_args["total_step"]:
+                # Load current task with scene
+                (scene, target) = self.tasks[idx[j]]
+
+                # Change episode if it's a terminal episode (goal reached or max step)
+                terminal = False
+                while not terminal and not self.exit.is_set() and self.optimizer.get_global_step() * self.max_t < self.init_args["total_step"]:
+                    self._sync_network(scene)
+
+                    # Plays some samples
+                    playout_reward, results, rollout_path, terminal = self._forward_explore(
+                        scene,
+                        idx[j])
+
+                    # Train on collected samples
+                    self._optimize_path(scene, playout_reward,
+                                        results, rollout_path)
+                    if (self.id == 0) and (self.optimizer.get_global_step() % 100) == 0:
+                        print(
+                            f'Global Step {self.optimizer.get_global_step()}')
+
+                    # Trigger save or other
+                    self.saver.after_optimization(self.id)
+
+                # New episode with different scene/task
+                j = j + 1
+                j = j % len(self.tasks)
                 # pass
             self.stop()
-            self.env.stop()
+            [env.stop() for env in self.envs]
         except Exception as e:
             # self.logger.error(e.msg)
             raise e

@@ -64,6 +64,9 @@ def rollout(env, state):
             # print(env.get_state.instance_detections2D)
             for bbox in state.instance_detections2D.keys():
                 print(bbox.split('|')[0])
+            obj_visible = [obj['objectId']
+                           for obj in state.metadata['objects'] if obj['visible']]
+            print(obj_visible)
             print(state.metadata['agent']['position'],
                   state.metadata['agent']['rotation'])
             info = False

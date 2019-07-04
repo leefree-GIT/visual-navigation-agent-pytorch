@@ -101,15 +101,8 @@ class THORDiscreteEnvironment(Environment):
 
         if self.reward_fun == 'soft_goal':
             if "Done" not in self.acts[:self.action_size]:
-                print("ERROR: Done action need to be sued with soft goal")
+                print("ERROR: Done action need to be used with soft goal")
                 exit()
-            self.terminal_id = -1
-            for i, object_visibility in enumerate(self.object_visibility):
-                for objectId in object_visibility:
-                    obj = objectId.split('|')
-                    if obj[0] == self.terminal_state['object']:
-                        self.terminal_id = i
-                        break
 
         else:
             terminal_pos = list(self.terminal_state['position'].values())

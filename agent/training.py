@@ -42,14 +42,17 @@ class TrainingSaver:
                 self.save_count = self.save_count + 1
 
     def save(self):
-        iteration = self.optimizer.get_global_step()*self.config['max_t']
+        conf = self.config
+        # Remove h5_file_path to saved config (lambda save error)
+        conf.pop('h5_file_path')
+        iteration = self.optimizer.get_global_step()*conf['max_t']
         filename = self.checkpoint_path.replace('{checkpoint}', str(iteration))
         model = dict()
         model['navigation'] = self.shared_network.state_dict()
         for key, val in self.scene_networks.items():
             model[f'navigation/{key}'] = val.state_dict()
         model['optimizer'] = self.optimizer.state_dict()
-        model['config'] = self.config
+        model['config'] = conf
 
         with suppress(FileExistsError):
             os.makedirs(os.path.dirname(filename))
@@ -171,6 +174,7 @@ class Training:
             else:
                 self.device = torch.device("cuda:" + str(device_id))
         self.method = self.config['method']
+        self.reward_fun = self.config['reward']
         self.initialize()
 
     @staticmethod
@@ -254,29 +258,32 @@ class Training:
                 it = it + 1
                 branches.append((scene, target))
 
-        def _createThread(id, task, summary_queue, device):
-            (scene, target) = task
-            net = nn.Sequential(self.shared_network,
-                                self.scene_networks[scene])
-            net.share_memory()
+        def _createThread(id, tasks, summary_queue, device):
+            scenes = set([scene for (scene, target) in tasks])
+            networks = {scene: nn.Sequential(self.shared_network,
+                                             self.scene_networks[scene]) for scene in scenes}
+
+            for net in networks.values():
+                net.share_memory()
 
             return TrainingThread(
                 id=id,
-                optimizer=self.optimizer,
-                network=net,
-                scene=scene,
+                networks=networks,
                 saver=self.saver,
-                terminal_state=target,
-                device=device,
+                optimizer=self.optimizer,
                 summary_queue=summary_queue,
-                **self.config)
+                device=device,
+                method=self.method,
+                reward=self.reward_fun,
+                tasks=tasks,
+                kwargs=self.config)
 
-        # Retrieve number of task
-        num_scene_task = len(branches)
+        # # Retrieve number of task
+        # num_scene_task = len(branches)
 
-        if self.num_thread < num_scene_task:
-            self.num_thread = num_scene_task
-            print('ERROR: num_thread must be higher than ', num_scene_task)
+        # if self.num_thread < num_scene_task:
+        #     self.num_thread = num_scene_task
+        #     print('ERROR: num_thread must be higher than ', num_scene_task)
 
         self.threads = []
 
@@ -305,7 +312,7 @@ class Training:
                 else:
                     device = torch.device("cpu")
                 self.threads.append(_createThread(
-                    i, branches[i % num_scene_task], summary_queue, device))
+                    i, branches, summary_queue, device))
                 self.threads[-1].start()
                 if self.config['cuda']:
                     # Wait for cuda init
