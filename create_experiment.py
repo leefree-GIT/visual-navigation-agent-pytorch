@@ -89,6 +89,7 @@ if __name__ == '__main__':
         for t in range(*args['eval_range']):
             name = "FloorPlan" + str(scene + t)
             # Use h5py object available
+            f = h5py.File("data/"+name+".h5")
             obj_available = json.loads(f.attrs["task_present"])
             obj_available = np.array(obj_available)
             obj_available_mask = [False for i in obj_available]
