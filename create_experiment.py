@@ -88,8 +88,23 @@ if __name__ == '__main__':
     for idx_scene, scene in enumerate(SCENES):
         for t in range(*args['eval_range']):
             name = "FloorPlan" + str(scene + t)
+            # Use h5py object available
+            obj_available = json.loads(f.attrs["task_present"])
+            obj_available = np.array(obj_available)
+            obj_available_mask = [False for i in obj_available]
+            obj_available_mask = np.array(obj_available_mask)
+
+            object_visibility = [json.loads(j) for j in
+                                 f['object_visibility']]
+            for obj_visible in object_visibility:
+                for objectId in obj_visible:
+                    obj = objectId.split('|')
+                    for obj_idx, curr_obj in enumerate(obj_available):
+                        if obj[0] == curr_obj:
+                            obj_available_mask[obj_idx] = True
             evaluation[name] = [
-                {"object": obj} for obj in scene_tasks[idx_scene]]
+                {"object": obj} for obj in obj_available[obj_available_mask == True]]
+
     data["task_list"] = {}
     data["task_list"]["train"] = training
     data["task_list"]["eval"] = evaluation
