@@ -91,11 +91,11 @@ class TrainingThread(mp.Process):
     def _sync_network(self, scene):
         if self.init_args['cuda']:
             with torch.cuda.device(self.device):
-                state_dict = self.master_network[scene].state_dict()
-                self.policy_networks[scene].load_state_dict(state_dict)
+                state_dict = self.master_network.state_dict()
+                self.policy_networks.load_state_dict(state_dict)
         else:
-            state_dict = self.master_network[scene].state_dict()
-            self.policy_networks[scene].load_state_dict(state_dict)
+            state_dict = self.master_network.state_dict()
+            self.policy_networks.load_state_dict(state_dict)
 
     def get_action_space_size(self):
         return len(self.envs[0].actions)
@@ -133,9 +133,8 @@ class TrainingThread(mp.Process):
 
         self.criterion = ActorCriticLoss(entropy_beta)
 
-        self.policy_networks = {scene: nn.Sequential(
-            SharedNetwork(self.method, self.mask_size), SceneSpecificNetwork(self.get_action_space_size())).to(self.device)
-            for scene in self.scenes}
+        self.policy_networks = nn.Sequential(SharedNetwork(
+            self.method, self.mask_size), SceneSpecificNetwork(self.get_action_space_size())).to(self.device)
         # Store action for each episode
         self.saved_actions = []
         # Initialize the episode
@@ -190,7 +189,7 @@ class TrainingThread(mp.Process):
                 goal_processed = goal_processed.to(self.device)
                 object_mask = object_mask.to(self.device)
 
-                (policy, value) = self.policy_networks[scene](
+                (policy, value) = self.policy_networks(
                     (x_processed, goal_processed, object_mask,))
             elif self.method == 'target_driven':
                 x_processed = torch.from_numpy(state["current"])
@@ -199,7 +198,7 @@ class TrainingThread(mp.Process):
                 x_processed = x_processed.to(self.device)
                 goal_processed = goal_processed.to(self.device)
 
-                (policy, value) = self.policy_networks[scene](
+                (policy, value) = self.policy_networks(
                     (x_processed, goal_processed,))
 
             if (self.id == 0) and (self.local_t % 100) == 0:
@@ -321,7 +320,7 @@ class TrainingThread(mp.Process):
                 goal_processed = goal_processed.to(self.device)
                 object_mask = object_mask.to(self.device)
 
-                (policy, value) = self.policy_networks[scene](
+                (policy, value) = self.policy_networks(
                     (x_processed, goal_processed, object_mask,))
             elif self.method == 'target_driven':
                 x_processed = torch.from_numpy(state["current"])
@@ -330,7 +329,7 @@ class TrainingThread(mp.Process):
                 x_processed = x_processed.to(self.device)
                 goal_processed = goal_processed.to(self.device)
 
-                (policy, value) = self.policy_networks[scene](
+                (policy, value) = self.policy_networks(
                     (x_processed, goal_processed,))
             return value.data.item(), results, rollout_path, terminal_end
 
@@ -371,8 +370,8 @@ class TrainingThread(mp.Process):
 
         # loss_value = loss.detach().numpy()
         self.optimizer.optimize(loss,
-                                self.policy_networks[scene],
-                                self.master_network[scene],
+                                self.policy_networks,
+                                self.master_network,
                                 self.init_args['cuda'])
 
     def run(self, master=None):
