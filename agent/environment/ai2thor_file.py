@@ -99,6 +99,8 @@ class THORDiscreteEnvironment(Environment):
 
         self.success = False
 
+        self.shortest_path_threshold = 5
+
         if self.reward_fun == 'soft_goal':
             if "Done" not in self.acts[:self.action_size]:
                 print("ERROR: Done action need to be used with soft goal")
@@ -134,14 +136,21 @@ class THORDiscreteEnvironment(Environment):
 
     def reset(self):
         # randomize initial state
-        k = random.randrange(self.n_locations)
-        while True:
-            # Assure that Z value is 0
-            if self.rotations[k][2] == 0:
-                # Assure that shortest path is higher than 5
-                if self.shortest_path_terminal(k) > 5:
-                    break
-            k = random.randrange(self.n_locations)
+        ks = np.arange(0, self.n_locations)
+        random.shuffle(ks)
+        k_set = False
+        while not k_set:
+            for k in ks:
+                # Assure that Z value is 0
+                if self.rotations[k][2] == 0:
+                    # Assure that shortest path is higher than 5
+                    if self.shortest_path_terminal(k) > self.shortest_path_threshold:
+                        k_set = True
+                        break
+            if not k_set:
+                print(self.scene, 'Did not find shorstest path higher than',
+                      self.shortest_path_threshold)
+                self.shortest_path_threshold = self.shortest_path_threshold - 1
         # reset parameters
         self.current_state_id = k
         self.start_state_id = k
@@ -344,7 +353,12 @@ class THORDiscreteEnvironment(Environment):
                     if obj[0] == self.terminal_state['object']:
                         lengths.append(self.shortest_path_distance[state][i])
                         break
-            min_len = np.min(lengths)
+            try:
+                min_len = np.min(lengths)
+            except Exception as e:
+                print(self.scene, self.terminal_state)
+                print(e)
+                raise e
             return min_len
         else:
             return self.shortest_path_distance[state][self.terminal_id]

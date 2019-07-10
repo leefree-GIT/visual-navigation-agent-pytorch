@@ -8,19 +8,62 @@ import ai2thor.controller
 import h5py
 import numpy as np
 import spacy
+import tensorflow as tf
+import torch
 from keras.applications import resnet50
+from keras.backend.tensorflow_backend import set_session
 from PIL import Image
 from tqdm import tqdm
 
-names = ["FloorPlan1", "FloorPlan2", "FloorPlan201", "FloorPlan202",
-         "FloorPlan301", "FloorPlan302", "FloorPlan401", "FloorPlan402"]
+import torchvision.models as models
+import torchvision.transforms as transforms
+
+names = []
+scene_type = []
+SCENES = [0, 200, 300, 400]
+TRAIN_SPLIT = (1, 22)
+TEST_SPLIT = (22, 27)
+
+KITCHEN_OBJECT_CLASS_LIST = [
+    "Toaster",
+    "Microwave",
+    "Fridge",
+    "CoffeeMachine",
+    "GarbageCan",
+    "Bowl",
+]
+
+LIVING_ROOM_OBJECT_CLASS_LIST = [
+    "Pillow",
+    "Laptop",
+    "Television",
+    "GarbageCan",
+    "Bowl",
+]
+
+BEDROOM_OBJECT_CLASS_LIST = ["HousePlant", "Lamp", "Book", "AlarmClock"]
+
+
+BATHROOM_OBJECT_CLASS_LIST = [
+    "Sink", "ToiletPaper", "SoapBottle", "LightSwitch"]
+SCENE_TASKS = [KITCHEN_OBJECT_CLASS_LIST, LIVING_ROOM_OBJECT_CLASS_LIST,
+               BEDROOM_OBJECT_CLASS_LIST, BATHROOM_OBJECT_CLASS_LIST]
+for idx, scene in enumerate(SCENES):
+    for t in range(*TRAIN_SPLIT):
+        names.append("FloorPlan" + str(scene + t))
+        scene_type.append(idx)
+    for t in range(*TEST_SPLIT):
+        names.append("FloorPlan" + str(scene + t))
+        scene_type.append(idx)
+
 grid_size = 0.5
 
 actions = ["MoveAhead", "RotateRight", "RotateLeft",
            "MoveBack", "LookUp", "LookDown", "MoveRight", "MoveLeft"]
 rotation_possible_inplace = 4
 ACTION_SIZE = len(actions)
-StateStruct = namedtuple("StateStruct", "id pos rot obs feat bbox obj_visible")
+StateStruct = namedtuple(
+    "StateStruct", "id pos rot obs feat feat_place bbox obj_visible")
 
 # Extracted from unity/Assets/Scripts/SimObjType.cs
 OBJECT_IDS = {
@@ -176,7 +219,7 @@ OBJECT_IDS = {
 
 
 def equal(s1, s2):
-    if s1.pos == s2.pos:
+    if s1.pos["x"] == s2.pos["x"] and s1.pos["z"] == s2.pos["z"]:
         if s1.rot == s2.rot:
             return True
     return False
@@ -193,19 +236,50 @@ class NumpyEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, np.ndarray):
             return obj.tolist()
+        elif isinstance(obj, np.int64):
+            return int(obj)
         return json.JSONEncoder.default(self, obj)
 
 
-def create_states(h5_file, resnet_trained, controller, name, args):
+def create_states(h5_file, resnet_trained, resnet_places, controller, name, args, scene_type):
     # Reset the environnment
     controller.reset(name)
-    if args['eval']:
-        controller.step(dict(action='InitialRandomSpawn',
-                             randomSeed=100, forceVisible=True, maxNumRepeats=5))
 
     # gridSize specifies the coarseness of the grid that the agent navigates on
     state = controller.step(
         dict(action='Initialize', gridSize=grid_size, renderObjectImage=True))
+
+    it = 0
+    while it < 5:
+        if args['eval']:
+            state = controller.step(dict(action='InitialRandomSpawn',
+                                         randomSeed=100, forceVisible=True, maxNumRepeats=30))
+        else:
+            state = controller.step(dict(action='InitialRandomSpawn',
+                                         randomSeed=200, forceVisible=True, maxNumRepeats=30))
+
+        # Check that every object is in scene
+        scene_task = SCENE_TASKS[scene_type]
+        obj_present = [False for i in scene_task]
+        for obj in state.metadata['objects']:
+            objectId = obj['objectId']
+            obj_name = objectId.split('|')[0]
+            for idx, _ in enumerate(obj_present):
+                if obj_name == scene_task[idx]:
+                    obj_present[idx] = True
+
+        if np.all(obj_present):
+            break
+        else:
+            print("obj not found", np.ma.masked_array(
+                scene_task, mask=obj_present))
+            it = it + 1
+    available_obj = np.ma.masked_array(
+        scene_task, mask=np.logical_not(obj_present)).compressed()
+    print(available_obj)
+
+    h5_file.attrs["task_present"] = np.string_(
+        json.dumps(available_obj, cls=NumpyEncoder))
 
     reachable_pos = controller.step(dict(
         action='GetReachablePositions', gridSize=grid_size)).metadata['reachablePositions']
@@ -240,6 +314,18 @@ def create_states(h5_file, resnet_trained, controller, name, args):
                     # Extract resnet feature from observation
                     feature = resnet_trained.predict(obs_process)
 
+                    # Extract resnet place feature from observation
+                    input_place = torch.from_numpy(state.frame.copy()/255.0)
+                    input_place = input_place.to("cuda", dtype=torch.float32)
+                    input_place = input_place/255
+                    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                     std=[0.229, 0.224, 0.225])
+                    input_place = input_place.unsqueeze(0)
+                    input_place = input_place.permute(0, 3, 2, 1)
+                    feature_place = resnet_places(input_place)
+                    feature_place = feature_place.cpu().detach().numpy()
+                    feature_place = feature_place.squeeze()[np.newaxis, ...]
+
                     # Store visible objects from the agent (visible = 1m away from the agent)
                     obj_visible = [obj['objectId']
                                    for obj in state.metadata['objects'] if obj['visible']]
@@ -249,16 +335,17 @@ def create_states(h5_file, resnet_trained, controller, name, args):
                         state.metadata['agent']['rotation'],
                         obs=state.frame,
                         feat=feature,
+                        feat_place=feature_place,
                         bbox=json.dumps(
                             state.instance_detections2D, cls=NumpyEncoder),
                         obj_visible=json.dumps(obj_visible))
 
                     if search_namedtuple(states, state_struct):
                         print("Already exists")
-                        exit()
-
-                    states.append(state_struct)
-                    idx = idx + 1
+                        # exit()
+                    else:
+                        states.append(state_struct)
+                        idx = idx + 1
 
                 # Reset camera
                 if i == 1:
@@ -296,7 +383,21 @@ def create_states(h5_file, resnet_trained, controller, name, args):
             del h5_file['object_visibility']
         h5_file.create_dataset(
             'object_visibility', data=[s.obj_visible.encode("ascii", "ignore") for s in states])
-    return states
+
+        return states
+    else:
+        for idx, _ in enumerate(h5_file['location']):
+            state_struct = StateStruct(
+                idx,
+                pos=h5_file['location'][idx],
+                rot=h5_file['rotation'][idx],
+                obs=None,
+                feat=None,
+                feat_place=None,
+                bbox=None,
+                obj_visible=None)
+            states.append(state_struct)
+        return states
 
 
 def create_graph(h5_file, states, controller, args):
@@ -319,6 +420,7 @@ def create_graph(h5_file, states, controller, args):
                                                      state_controller.metadata['agent']['rotation'],
                                                      obs=None,
                                                      feat=None,
+                                                     feat_place=None,
                                                      bbox=None,
                                                      obj_visible=None)
 
@@ -326,9 +428,9 @@ def create_graph(h5_file, states, controller, args):
                     found = search_namedtuple(
                         states, state_controller_named)
                     if found is None:
+                        # print([(s.pos, s.rot) for s in states])
                         # print(state_controller_named)
-                        # print("Error, state not found")
-                        # exit()
+                        print("Error, state not found")
                         continue
                     graph[state.id][i] = found.id
         if 'graph' in h5_file.keys():
@@ -337,6 +439,8 @@ def create_graph(h5_file, states, controller, args):
         h5_file.create_dataset(
             'graph', data=graph)
         return graph
+    else:
+        return h5_file['graph']
 
 
 def write_object_feature(h5_file, object_feature, object_vector):
@@ -418,6 +522,7 @@ def extract_object_feature(resnet_trained, h, w):
 def create_shortest_path(h5_file, states, graph):
     # Usee network to compute shortest path
     import networkx as nx
+    from networkx.readwrite import json_graph
     num_states = len(states)
     G = nx.Graph()
     shortest_dist_graph = np.full((num_states, num_states), -1)
@@ -429,15 +534,25 @@ def create_shortest_path(h5_file, states, graph):
             if graph[state.id][i] != -1:
                 G.add_edge(state.id, graph[state.id][i])
     shortest_path = nx.shortest_path(G)
+
     for state_id_src in range(num_states):
         for state_id_dst in range(num_states):
-            shortest_dist_graph[state_id_src][state_id_dst] = len(
-                shortest_path[state_id_src][state_id_dst]) - 1
+            try:
+                shortest_dist_graph[state_id_src][state_id_dst] = len(
+                    shortest_path[state_id_src][state_id_dst]) - 1
+            except KeyError:
+                # No path between states
+                print(state_id_src, state_id_dst)
+                shortest_dist_graph[state_id_src][state_id_dst] = -1
 
     if 'shortest_path_distance' in h5_file.keys():
         del h5_file['shortest_path_distance']
     h5_file.create_dataset('shortest_path_distance',
                            data=shortest_dist_graph)
+    if 'networkx_graph' in h5_file.keys():
+        del h5_file['networkx_graph']
+    h5_file.create_dataset("networkx_graph", data=np.array(
+        [json.dumps(json_graph.node_link_data(G), cls=NumpyEncoder)], dtype='S'))
 
 
 def main():
@@ -452,18 +567,32 @@ def main():
     controller.start(player_screen_width=w, player_screen_height=h)
 
     # Use resnet from Keras to compute features
+    config = tf.ConfigProto()
+    config.gpu_options.per_process_gpu_memory_fraction = 0.3
+    set_session(tf.Session(config=config))
     resnet_trained = resnet50.ResNet50(
         include_top=False, weights='imagenet', pooling='avg', input_shape=(h, w, 3))
     # Freeze all layers
     for layer in resnet_trained.layers:
         layer.trainable = False
 
+    # Use resnet places
+    resnet_places = models.resnet50(num_classes=365)
+    checkpoint = torch.load("agent/resnet/resnet50_places365.pth.tar",
+                            map_location=lambda storage, loc: storage)
+    state_dict = {str.replace(k, 'module.', ''): v for k,
+                  v in checkpoint['state_dict'].items()}
+    resnet_places.load_state_dict(state_dict)
+    resnet_places = torch.nn.Sequential(*list(resnet_places.children())[:-1])
+    resnet_places.eval()
+    resnet_places = resnet_places.to("cuda")
+
     object_feature, object_vector = extract_object_feature(
         resnet_trained, h, w)
 
     pbar_names = tqdm(names)
 
-    for name in pbar_names:
+    for idx, name in enumerate(pbar_names):
         pbar_names.set_description("%s" % name)
 
         # Eval dataset
@@ -480,8 +609,8 @@ def main():
                              object_feature, object_vector)
 
         # Construct all possible states
-        states = create_states(h5_file, resnet_trained,
-                               controller, name, args)
+        states = create_states(h5_file, resnet_trained, resnet_places,
+                               controller, name, args, scene_type[idx])
 
         # Create action-state graph
         graph = create_graph(h5_file, states, controller, args)
