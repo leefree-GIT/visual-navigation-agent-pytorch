@@ -63,8 +63,7 @@ class Evaluation:
         self.config = config
         self.shared_net = SharedNetwork(
             self.config['method'], self.config.get('mask_size', 5))
-        self.scene_nets = {key: SceneSpecificNetwork(
-            self.config['action_size']) for key in config['task_list'].keys()}
+        self.scene_net = SceneSpecificNetwork(self.config['action_size'])
 
         self.checkpoints = []
         self.checkpoint_id = 0
@@ -91,7 +90,7 @@ class Evaluation:
         evaluation.chk_numbers = chk_numbers
         evaluation.checkpoints = checkpoints
         evaluation.saver = TrainingSaver(evaluation.shared_net,
-                                         evaluation.scene_nets, None, evaluation.config)
+                                         evaluation.scene_net, None, evaluation.config)
         return evaluation
 
     def restore(self):
@@ -123,7 +122,7 @@ class Evaluation:
             self.restore()
             self.next_checkpoint()
             for scene_scope, items in self.config['task_list'].items():
-                scene_net = self.scene_nets[scene_scope]
+                scene_net = self.scene_net
                 scene_net.eval()
                 scene_stats[scene_scope] = list()
 

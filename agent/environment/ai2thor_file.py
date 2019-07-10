@@ -148,9 +148,8 @@ class THORDiscreteEnvironment(Environment):
                         k_set = True
                         break
             if not k_set:
-                print(self.scene, 'Did not find shorstest path higher than',
-                      self.shortest_path_threshold, "for", self.terminal_state['object'])
-                self.shortest_path_threshold = self.shortest_path_threshold - 1
+                print(self.scene, 'Did not find accessible state for',
+                      self.terminal_state['object'])
         # reset parameters
         self.current_state_id = k
         self.start_state_id = k
@@ -356,6 +355,26 @@ class THORDiscreteEnvironment(Environment):
             return False
         else:
             return self.shortest_path_distance[state][self.terminal_id] != -1
+
+    def shortest_path_terminal(self, state):
+
+        if self.reward_fun == 'soft_goal':
+            lengths = []
+            for i, object_visibility in enumerate(self.object_visibility):
+                for objectId in object_visibility:
+                    obj = objectId.split('|')
+                    if obj[0] == self.terminal_state['object']:
+                        lengths.append(self.shortest_path_distance[state][i])
+                        break
+            try:
+                min_len = np.min(lengths)
+            except Exception as e:
+                print(self.scene, self.terminal_state)
+                print(e)
+                raise e
+            return min_len
+        else:
+            return self.shortest_path_distance[state][self.terminal_id]
 
     @property
     def actions(self):
