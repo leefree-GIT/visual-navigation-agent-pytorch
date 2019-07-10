@@ -61,6 +61,14 @@ class SharedNetwork(nn.Module):
             # Merge layer
             self.fc_merge = nn.Linear(
                 512+self.word_embedding_size+self.flat_input, 512)
+
+        elif self.method == "word2vec_nosimi":
+            self.word_embedding_size = 300
+            self.fc_target = nn.Linear(
+                self.word_embedding_size, self.word_embedding_size)
+            # Observation layer
+            self.fc_observation = nn.Linear(8192, 512)
+            self.fc_merge = nn.Linear(self.word_embedding_size + 512, 512)
         elif self.method == 'aop':
             # Target object layer
             self.fc_target = nn.Linear(2048, 512)
@@ -103,6 +111,24 @@ class SharedNetwork(nn.Module):
             xyz = self.fc_merge(xyz)
             xyz = F.relu(xyz, True)
             return xyz
+
+        elif self.method == 'word2vec_nosimi':
+            # x is the observation
+            # y is the target
+            (x, y) = inp
+
+            x = x.view(-1)
+            x = self.fc_observation(x)
+            x = F.relu(x, True)
+
+            y = y.view(-1)
+            y = self.fc_target(y)
+            y = F.relu(y, True)
+
+            xy = torch.cat([x, y])
+            xy = self.fc_merge(xy)
+            xy = F.relu(xy, True)
+            return xy
         elif self.method == 'aop':
             # x is the observation
             # y is the target
@@ -160,7 +186,7 @@ class SceneSpecificNetwork(nn.Module):
         x = self.fc1(x)
         x = F.relu(x)
         x_policy = self.fc2_policy(x)
-        #x_policy = F.softmax(x_policy)
+        # x_policy = F.softmax(x_policy)
 
         x_value = self.fc2_value(x)[0]
         return (x_policy, x_value, )

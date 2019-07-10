@@ -168,6 +168,11 @@ class TrainingThread(mp.Process):
                     "goal": self.envs[idx].render_target('word_features'),
                     "object_mask": self.envs[idx].render_mask_similarity()
                 }
+            elif self.method == 'word2vec_nosimi':
+                state = {
+                    "current": self.envs[idx].render('resnet_features'),
+                    "goal": self.envs[idx].render_target('word_features')
+                }
             elif self.method == 'aop':
                 state = {
                     "current": self.envs[idx].render('resnet_features'),
@@ -191,7 +196,7 @@ class TrainingThread(mp.Process):
 
                 (policy, value) = self.policy_networks(
                     (x_processed, goal_processed, object_mask,))
-            elif self.method == 'target_driven':
+            elif self.method == 'target_driven' or self.method == 'word2vec_nosimi':
                 x_processed = torch.from_numpy(state["current"])
                 goal_processed = torch.from_numpy(state["goal"])
 
@@ -311,6 +316,11 @@ class TrainingThread(mp.Process):
                     "current": self.envs[idx].render('resnet_features'),
                     "goal": self.envs[idx].render_target('resnet_features'),
                 }
+            elif self.method == 'word2vec_nosimi':
+                state = {
+                    "current": self.envs[idx].render('resnet_features'),
+                    "goal": self.envs[idx].render_target('word_features')
+                }
             if self.method == 'word2vec' or self.method == 'aop':
                 x_processed = torch.from_numpy(state["current"])
                 goal_processed = torch.from_numpy(state["goal"])
@@ -322,7 +332,7 @@ class TrainingThread(mp.Process):
 
                 (policy, value) = self.policy_networks(
                     (x_processed, goal_processed, object_mask,))
-            elif self.method == 'target_driven':
+            elif self.method == 'target_driven' or self.method == 'word2vec_nosimi':
                 x_processed = torch.from_numpy(state["current"])
                 goal_processed = torch.from_numpy(state["goal"])
 

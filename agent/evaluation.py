@@ -162,6 +162,11 @@ class Evaluation:
                                     "goal": env.render_target('word_features'),
                                     "object_mask": env.render_mask_similarity()
                                 }
+                            elif self.method == 'word2vec_nosimi':
+                                state = {
+                                    "current": env.render('resnet_features'),
+                                    "goal": env.render_target('word_features')
+                                }
                             elif self.method == 'aop':
                                 state = {
                                     "current": env.render('resnet_features'),
@@ -184,7 +189,7 @@ class Evaluation:
 
                                 embedding = self.shared_net.forward(
                                     (x_processed, goal_processed, object_mask,))
-                            elif self.method == 'target_driven':
+                            elif self.method == 'target_driven' or self.method == "word2vec_nosimi":
                                 x_processed = torch.from_numpy(
                                     state["current"])
                                 goal_processed = torch.from_numpy(

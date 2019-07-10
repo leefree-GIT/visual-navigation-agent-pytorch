@@ -114,7 +114,7 @@ class THORDiscreteEnvironment(Environment):
                     break
 
         # LAST instruction
-        if self.method == 'word2vec':
+        if self.method == 'word2vec' or self.method == 'word2vec_nosimi':
             self.s_target = self.object_vector[self.object_ids[self.terminal_state['object']]]
 
         elif self.method == 'aop':
@@ -274,7 +274,7 @@ class THORDiscreteEnvironment(Environment):
         return self.s_t
 
     def render_target(self, mode):
-        if self.method == 'aop' or self.method == 'word2vec':
+        if self.method == 'aop' or self.method == 'word2vec' or self.method == 'word2vec_nosimi':
             assert mode == 'word_features'
             return self.s_target
         elif self.method == 'target_driven':
