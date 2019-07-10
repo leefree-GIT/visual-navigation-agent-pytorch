@@ -126,3 +126,7 @@ data/*
 !data/download_scene_dumps.sh
 !data/objects
 !data/objects/*
+
+!metric_learning
+!metric_learning/*
+!metric_learning.py
