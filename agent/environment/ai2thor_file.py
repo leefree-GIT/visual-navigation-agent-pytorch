@@ -365,8 +365,10 @@ class THORDiscreteEnvironment(Environment):
                 for objectId in object_visibility:
                     obj = objectId.split('|')
                     if obj[0] == self.terminal_state['object']:
-                        lengths.append(self.shortest_path_distance[state][i])
-                        break
+                        if self.shortest_path_distance[state][i] != -1:
+                            lengths.append(
+                                self.shortest_path_distance[state][i])
+                            break
             try:
                 min_len = np.min(lengths)
             except Exception as e:

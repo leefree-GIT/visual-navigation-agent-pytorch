@@ -44,7 +44,10 @@ class TrainingSaver:
     def save(self):
         conf = self.config
         # Remove h5_file_path to saved config (lambda save error)
-        conf.pop('h5_file_path')
+        try:
+            conf.pop('h5_file_path')
+        except Exception:
+            pass
         iteration = self.optimizer.get_global_step()*conf['max_t']
         filename = self.checkpoint_path.replace('{checkpoint}', str(iteration))
         model = dict()
