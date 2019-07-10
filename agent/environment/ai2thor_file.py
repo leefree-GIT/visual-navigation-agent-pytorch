@@ -144,12 +144,12 @@ class THORDiscreteEnvironment(Environment):
                 # Assure that Z value is 0
                 if self.rotations[k][2] == 0:
                     # Assure that shortest path is higher than 5
-                    if self.shortest_path_terminal(k) > self.shortest_path_threshold:
+                    if self.accessible_terminal(k):
                         k_set = True
                         break
             if not k_set:
                 print(self.scene, 'Did not find shorstest path higher than',
-                      self.shortest_path_threshold)
+                      self.shortest_path_threshold, "for", self.terminal_state['object'])
                 self.shortest_path_threshold = self.shortest_path_threshold - 1
         # reset parameters
         self.current_state_id = k
@@ -343,7 +343,7 @@ class THORDiscreteEnvironment(Environment):
             raise e
         return output
 
-    def shortest_path_terminal(self, state):
+    def accessible_terminal(self, state):
 
         if self.reward_fun == 'soft_goal':
             lengths = []
@@ -351,17 +351,11 @@ class THORDiscreteEnvironment(Environment):
                 for objectId in object_visibility:
                     obj = objectId.split('|')
                     if obj[0] == self.terminal_state['object']:
-                        lengths.append(self.shortest_path_distance[state][i])
-                        break
-            try:
-                min_len = np.min(lengths)
-            except Exception as e:
-                print(self.scene, self.terminal_state)
-                print(e)
-                raise e
-            return min_len
+                        if self.shortest_path_distance[state][i] != -1:
+                            return True
+            return False
         else:
-            return self.shortest_path_distance[state][self.terminal_id]
+            return self.shortest_path_distance[state][self.terminal_id] != -1
 
     @property
     def actions(self):
