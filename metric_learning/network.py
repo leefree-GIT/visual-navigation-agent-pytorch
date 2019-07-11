@@ -35,7 +35,7 @@ class ResnetEmbeddingNet(nn.Module):
                                 nn.PReLU(),
                                 nn.Linear(256, 256),
                                 nn.PReLU(),
-                                nn.Linear(256, 32)
+                                nn.Linear(256, 2)
                                 )
 
     def forward(self, x):
@@ -180,6 +180,7 @@ class OnlineTripletLoss(nn.Module):
 
         valid_idx = [t_idx for t_idx, _ in enumerate(
             target_idx) if hardest_positive[t_idx] != -1 and hardest_negative[t_idx] != -1]
+
         anc_emb = embedding[valid_idx]
         pos_emb = embedding[hardest_positive[valid_idx]]
         neg_emb = embedding[hardest_negative[valid_idx]]

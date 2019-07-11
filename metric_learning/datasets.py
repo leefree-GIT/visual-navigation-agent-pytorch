@@ -129,6 +129,7 @@ class OnlineTripletNavigationDataset(Dataset):
 
         # Load locations
         self.n_locations = len(self.h5_file['location'][()])
+        self.rotations = self.h5_file['rotation'][()]
 
         # Load networkx graph
         self.networkx_graph = json_graph.node_link_graph(json.loads(
@@ -164,17 +165,15 @@ class OnlineTripletNavigationDataset(Dataset):
 
         # POSITIVE
         # Get index
+        tiled_index = np.tile(index, len(self.shortest_path_distance[index]))
+        condition_face_same_direction = self.rotations[:
+                                                       ][:, 1] == self.rotations[tiled_index][:, 1]
+        condition = (candidate <= 2) & (
+            candidate >= 1) & condition_face_same_direction
         candidate_positive_idx = np.transpose(np.nonzero(
-            (candidate <= 2) & (candidate >= 1)))
+            condition))
         # Extract index
         candidate_positive_idx = [c[0] for c in candidate_positive_idx]
-
-        # Fallback to only close
-        if len(candidate_positive_idx) == 0:
-            candidate_positive_idx = np.transpose(np.nonzero(
-                (candidate <= 2) & (candidate >= 1)))
-            # Extract index
-            candidate_positive_idx = [c[0] for c in candidate_positive_idx]
 
         # NEGATIVE
         # Negative is more than 6 step away
@@ -210,8 +209,10 @@ class TripletMNIST(Dataset):
         self.labels_set = set(self.train_labels.numpy())
         self.label_to_indices = {label: np.where(self.train_labels.numpy() == label)[0]
                                  for label in self.labels_set}
+        self.output = False
 
     def set_output_obs(self, value):
+        self.output = value
         return
 
     def __getitem__(self, index):
@@ -233,7 +234,10 @@ class TripletMNIST(Dataset):
             img1 = self.transform(img1)
             img2 = self.transform(img2)
             img3 = self.transform(img3)
-        return img1, img2, img3, [], index
+        if self.output:
+            return img1, img2, img3, self.train_labels[index], index
+        else:
+            return img1, img2, img3, [], index
 
     def __len__(self):
         return len(self.mnist_dataset)

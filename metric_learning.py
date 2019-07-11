@@ -5,7 +5,9 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import torch.multiprocessing
 import torch.optim as optim
+from matplotlib.offsetbox import AnnotationBbox, OffsetImage
 from tensorboardX import SummaryWriter
 from torch.optim import lr_scheduler
 from torch.utils.data import ConcatDataset, DataLoader
@@ -40,187 +42,219 @@ def plot_embeddings(embeddings, targets, xlim=None, ylim=None):
     plt.legend(mnist_classes)
 
 
-def train_triplet(method, mask_size):
-    # Create summary writer to keep track of loss and embedding
-    writer = SummaryWriter("EXPERIMENTS/METRICS/logs/" +
-                           datetime.now().strftime('%b%d_%H-%M-%S'))
-    cuda = torch.cuda.is_available()
-    device = torch.device("cpu")
-    if cuda:
-        device = torch.device("cuda")
+class MetricLearning():
+    def __init__(self, device, scene, method, mask_size, mode, log_path):
+        # Create transform for embedding plot
+        obs_transform = transforms.Compose([transforms.ToPILImage(),
+                                            transforms.Resize(64),
+                                            transforms.ToTensor()
+                                            ])
+        # Load dataset
+        if mode == "Offline":
+            dataset = TripletNavigationDataset(
+                method, scene, {"object": "Microwave"}, mask_size, obs_transform)
+            # Load Triplet Network
+            model = TripletNetwork(ResnetEmbeddingNet()).to(device)
+        elif mode == "Online":
+            dataset = OnlineTripletNavigationDataset(
+                method, scene, {"object": "Microwave"}, mask_size, obs_transform)
+            # dataset2 = OnlineTripletNavigationDataset(
+            #     method, "FloorPlan2", {"object": "Microwave"}, mask_size, obs_transform)
+            # dataset3 = OnlineTripletNavigationDataset(
+            #     method, "FloorPlan2", {"object": "Microwave"}, mask_size, obs_transform)
+            # dataset = ConcatDataset((dataset, dataset2, dataset3))
+            # Load Triplet Network
+            model = TripletNetwork(ResnetEmbeddingNet()).to(device)
 
-    # Create transform for embedding plot
-    obs_transform = transforms.Compose([transforms.ToPILImage(),
-                                        transforms.Resize(64),
-                                        transforms.ToTensor()
-                                        ])
-    # Load dataset
+        else:
+            mean, std = 0.1307, 0.3081
 
-    mode = "Online"  # MNIST, Online, Offline
-    if mode == "Offline":
-        dataset = TripletNavigationDataset(
-            method, "FloorPlan1", {"object": "Microwave"}, mask_size, obs_transform)
-        # Load Triplet Network
-        model = TripletNetwork(ResnetEmbeddingNet()).to(device)
-    elif mode == "Online":
-        dataset = OnlineTripletNavigationDataset(
-            method, "FloorPlan1", {"object": "Microwave"}, mask_size, obs_transform)
-        # dataset2 = OnlineTripletNavigationDataset(
-        #     method, "FloorPlan2", {"object": "Microwave"}, mask_size, obs_transform)
-        # dataset3 = OnlineTripletNavigationDataset(
-        #     method, "FloorPlan2", {"object": "Microwave"}, mask_size, obs_transform)
-        # dataset = ConcatDataset((dataset, dataset2, dataset3))
-        # Load Triplet Network
-        model = TripletNetwork(ResnetEmbeddingNet()).to(device)
+            train_dataset = MNIST('data/MNIST', train=True, download=True,
+                                  transform=transforms.Compose([
+                                      transforms.ToTensor(),
+                                      transforms.Normalize((mean,), (std,))
+                                  ]))
+            dataset = TripletMNIST(train_dataset)
+            # Load Triplet Network
+            model = TripletNetwork(EmbeddingNet()).to(device)
 
-    else:
-        mean, std = 0.1307, 0.3081
+        train_loader = DataLoader(dataset, batch_size=16,
+                                  shuffle=True, pin_memory=True, num_workers=1)
 
-        train_dataset = MNIST('data/MNIST', train=True, download=True,
-                              transform=transforms.Compose([
-                                  transforms.ToTensor(),
-                                  transforms.Normalize((mean,), (std,))
-                              ]))
-        dataset = TripletMNIST(train_dataset)
-        # Load Triplet Network
-        model = TripletNetwork(EmbeddingNet()).to(device)
+        # Load Triplet loss
+        if mode != "Online":
+            lossFun = TripletLoss(margin=1).to(device)
+        else:
+            lossFun = OnlineTripletLoss(margin=1).to(device)
 
-    train_loader = DataLoader(dataset, batch_size=16,
-                              shuffle=True, pin_memory=True, num_workers=1)
+        self.model = model
+        self.train_loader = train_loader
+        self.dataset = dataset
+        self.lossFun = lossFun
+        self.writer_eval = None
+        self.log_path = log_path
+        self.mode = mode
+        self.device = device
 
-    # Load Triplet loss
-    if mode != "Online":
-        lossFun = TripletLoss(margin=1).to(device)
-    else:
-        lossFun = OnlineTripletLoss(margin=1).to(device)
+    def train_triplet(self):
+        # Create summary writer to keep track of loss and embedding
+        writer = SummaryWriter(self.log_path.replace("{folder}", ""))
 
-    # Use blog optimizer/scheduler
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
-    scheduler = lr_scheduler.StepLR(optimizer, 16, gamma=0.1, last_epoch=-1)
+        # Use blog optimizer/scheduler
+        optimizer = optim.Adam(self.model.parameters(), lr=1e-3)
+        scheduler = lr_scheduler.StepLR(
+            optimizer, 16, gamma=0.1, last_epoch=-1)
 
-    # We will train the model (unfreeze)
-    model.train()
+        # We will train the model (unfreeze)
+        self.model.train()
 
-    # Max train epoch
-    MAX_EPOCH = 1000
-    EMBEDDING_EPOCH = 10
-    t_epoch = tqdm(range(MAX_EPOCH), desc="Epoch")
-    for epoch in t_epoch:
-        losses = []
-        embedding = None
-        obs_embedding = None
-        indexes_batch = None
-        scheduler.step()
+        # Max train epoch
+        MAX_EPOCH = 100
+        EMBEDDING_EPOCH = 10
+        t_epoch = tqdm(range(MAX_EPOCH), desc="Epoch")
+        for epoch in t_epoch:
+            losses = []
+            embedding = None
+            obs_embedding = None
+            indexes_batch = None
+            scheduler.step()
 
-        # Only output obs for embedding plot
-        if mode == 'Offline' and epoch % EMBEDDING_EPOCH == 0:
-            dataset.set_output_obs(True)
-        elif mode == 'Offline':
-            dataset.set_output_obs(False)
+            # Only output obs for embedding plot
+            if epoch % EMBEDDING_EPOCH == 0:
+                self.dataset.set_output_obs(True)
+            else:
+                self.dataset.set_output_obs(False)
 
-        for batch in tqdm(train_loader, desc="Batch"):
-            optimizer.zero_grad()
-            (targets, positives, negatives, observations,
-             indexes) = batch
+            for batch in tqdm(self.train_loader, desc="Batch"):
+                optimizer.zero_grad()
+                (targets, positives, negatives, observations,
+                 indexes) = batch
 
-            # for enu, indx in enumerate(indexes):
-            #     fig = plt.figure()
-            #     fig.add_subplot(1, 3, 1)
-            #     plt.imshow(dataset.h5_file['observation'][indexes[enu]])
-            #     fig.add_subplot(1, 3, 2)
-            #     plt.imshow(dataset.h5_file['observation'][negative_idxs[enu]])
-            #     fig.add_subplot(1, 3, 3)
-            #     plt.imshow(dataset.h5_file['observation'][positive_idxs[enu]])
-            #     plt.show()
-            if mode != "Online":
+                if self.mode != "Online":
+                    targets = targets.to(self.device)
+                    positives = positives.to(self.device)
+                    negatives = negatives.to(self.device)
+                    emb_targets, emb_positive, emb_negative = self.model(
+                        targets, positives, negatives)
+
+                    loss = self.lossFun(
+                        emb_targets, emb_positive, emb_negative)
+                    losses.append(loss.cpu().item())
+                    loss.backward()
+
+                    optimizer.step()
+
+                elif self.mode == "Online":
+                    targets = targets.to(self.device)
+                    emb_targets = self.model.get_embedding(targets)
+                    loss = self.lossFun(
+                        emb_targets, indexes, positives, negatives)
+                    losses.append(loss.cpu().item())
+                    loss.backward()
+
+                    optimizer.step()
+            # Store data for embedding plot
+            if epoch % EMBEDDING_EPOCH == 0:
+                self.eval_triplet(epoch)
+
+            # Plot loss
+            losses = np.array(losses)
+            mean_loss = np.mean(losses[np.logical_not(np.isnan(losses))])
+            t_epoch.set_postfix(loss=mean_loss)
+            writer.add_scalar('loss', mean_loss, epoch)
+
+        writer.close()
+        torch.save(self.model.state_dict(),
+                   self.log_path.replace("{folder}", "/embedding") + "checkpoint" + str(MAX_EPOCH) + ".pth")
+
+    def eval_triplet(self, epoch=0):
+        if self.writer_eval is None:
+            self.writer_eval = SummaryWriter(
+                self.log_path.replace("{folder}", "/embedding"))
+        self.model.eval()
+        self.dataset.set_output_obs(True)
+
+        device = self.device
+        model = self.model.to(device)
+
+        # Plot embedding
+        embeddings = np.zeros((len(self.train_loader.dataset), 2))
+        if self.mode == "MNIST":
+            obs_embeddings = np.zeros((
+                len(self.train_loader.dataset)))
+        else:
+            obs_embeddings = np.zeros((
+                len(self.train_loader.dataset), 3, 64, 85))
+        indexes_embeddings = np.zeros((len(self.train_loader.dataset)))
+        k = 0
+        with torch.no_grad():
+            for batch in tqdm(self.train_loader, desc="Batch eval"):
+                # Get current batch
+                (targets, positives, negatives, observations, indexes) = batch
+
                 targets = targets.to(device)
                 positives = positives.to(device)
                 negatives = negatives.to(device)
-                emb_targets, emb_positive, emb_negative = model(
-                    targets, positives, negatives)
 
-                loss = lossFun(emb_targets, emb_positive, emb_negative)
-                losses.append(loss.cpu().item())
-                loss.backward()
-
-                optimizer.step()
-
-            elif mode == "Online":
-                targets = targets.to(device)
-                emb_targets = model.get_embedding(targets)
-                loss = lossFun(emb_targets, indexes, positives, negatives)
-                losses.append(loss.cpu().item())
-                loss.backward()
-
-                optimizer.step()
-            # Store data for embedding plot
-            if mode != "Online" and epoch % EMBEDDING_EPOCH == 0:
-                if mode != "MNIST":
-                    # Only plot front view (not up or down view)
-                    for idx_enum, idx in enumerate(indexes):
-                        ob = observations[idx_enum].detach().numpy()
-                        if embedding is None:
-                            embedding = emb_targets[idx_enum].unsqueeze(0)
-                        else:
-                            embedding = torch.cat(
-                                [embedding, emb_targets[idx_enum].unsqueeze(0)], dim=0)
-
-                        if obs_embedding is None:
-                            obs_embedding = observations[idx_enum].unsqueeze(
-                                0)
-                        else:
-                            obs_embedding = torch.cat(
-                                [obs_embedding, observations[idx_enum].unsqueeze(0)], dim=0)
+                if self.mode != "Online":
+                    emb_targets, emb_positive, emb_negative = model(
+                        targets, positives, negatives)
+                    embedding = emb_targets.cpu().detach()
+                    obs_embedding = observations.cpu().detach()
                 else:
-                    if embedding is None:
-                        embedding = emb_targets
-                    else:
-                        embedding = torch.cat(
-                            [embedding, emb_targets], dim=0)
-                    if obs_embedding is None:
-                        obs_embedding = targets
-                    else:
-                        obs_embedding = torch.cat(
-                            [obs_embedding, targets], dim=0)
+                    emb_targets = model.get_embedding(targets)
+                    embedding = emb_targets.cpu().detach()
+                    obs_embedding = observations.cpu().detach()
 
-                    if indexes_batch is None:
-                        indexes_batch = indexes
-                    else:
-                        indexes_batch = torch.cat(
-                            [indexes_batch, indexes], dim=0)
+                len_b = len(targets)
+                embeddings[k: k+len_b, ...] = embedding.numpy()
 
-        # Plot loss
-        losses = np.array(losses)
-        mean_loss = np.mean(losses[np.logical_not(np.isnan(losses))])
-        t_epoch.set_postfix(loss=mean_loss)
-        writer.add_scalar('loss', mean_loss, epoch)
+                obs_embeddings[k: k +
+                               len_b, ...] = obs_embedding.numpy()
+                indexes_embeddings[k: k +
+                                   len_b] = indexes.detach().cpu().numpy()
 
-        # Plot embedding
-        if mode != "Online" and epoch % EMBEDDING_EPOCH == 0:
-            embedding = embedding.cpu().detach()
-            obs_embedding = obs_embedding.cpu().detach()
-            if mode != "MNIST":
-                writer.add_embedding(
-                    mat=embedding, label_img=obs_embedding, global_step=epoch)
-            else:
-                indexes_batch = indexes_batch.cpu().detach()
-                writer.add_embedding(
-                    mat=embedding, label_img=obs_embedding, global_step=epoch)
-                # plot_embeddings(embedding.numpy(),
-                #                 dataset.train_labels[indexes_batch.numpy()])
-                # plt.show()
-            writer._get_file_writer().flush()
-            del obs_embedding
-            del embedding
+                k = k+len_b
+        self.model.train()
+        fig, ax = plt.subplots(figsize=(28.0, 25.0))
+        if self.mode != "MNIST":
+            x = []
+            y = []
+            obs_embeddings_front = []
+            for idx, index in enumerate(indexes_embeddings):
+                if self.dataset.rotations[int(index)][2] == 0.0:
+                    x.append(embeddings[idx, 0])
+                    y.append(embeddings[idx, 1])
+                    obs_embeddings_front.append(obs_embeddings[idx])
+            ax.scatter(x, y)
+            for x0, y0, obs in zip(x, y, obs_embeddings_front):
+                obs = np.transpose(obs, (1, 2, 0))
+                obs = OffsetImage(obs, zoom=0.8)
+                ab = AnnotationBbox(obs, (x0, y0), frameon=False)
+                ax.add_artist(ab)
 
-    writer.close()
-    torch.save(model.state_dict(),
-               "EXPERIMENTS/METRICS/checkpoint" + str(MAX_EPOCH) + ".pth")
+            labels = [str(x0) + '|' + str(y0)
+                      for x0, y0 in zip(embeddings[:, 0], embeddings[:, 1])]
+
+            self.writer_eval.add_embedding(
+                mat=embeddings, metadata=labels, label_img=torch.from_numpy(obs_embeddings), global_step=epoch)
+        else:
+            plot_embeddings(embeddings, obs_embeddings)
+
+        plt.savefig(self.log_path.replace(
+            "{folder}", "/embedding") + "/fig_" + str(epoch))
+        plt.close()
 
 
-if __name__ == '__main__':
+def main():
+
     parser = argparse.ArgumentParser(
         description="Metric learning for agent navigation")
+
+    parser.add_argument('--eval', default=None, type=str,
+                        help='eval production')
+    args = vars(parser.parse_args())
+
     # # Use experiment.json
     # parser.add_argument('--exp', '-e', type=str,
     #                     help='Experiment parameters.json file', required=True)
@@ -241,9 +275,29 @@ if __name__ == '__main__':
     #         exit()
 
     # torch.manual_seed(args['seed'])
-    import torch.multiprocessing
     torch.multiprocessing.set_sharing_strategy('file_system')
     torch.set_num_threads(1)
     method = "word2vec"
     mask_size = 16
-    train_triplet(method, mask_size)
+    mode = "Online"  # MNIST, Online, Offline
+    scene = "FloorPlan5"
+
+    cuda = torch.cuda.is_available()
+    device = torch.device("cpu")
+    if cuda:
+        device = torch.device("cuda")
+
+    log_path = "EXPERIMENTS/METRICS/logs/" + \
+        datetime.now().strftime('%b%d_%H-%M-%S') + "{folder}"
+    metric = MetricLearning(
+        device, scene, method, mask_size, mode, log_path)
+
+    if args["eval"] is None:
+        metric.train_triplet()
+    else:
+        metric.model.load_state_dict(torch.load(args["eval"]))
+        metric.eval_triplet()
+
+
+if __name__ == '__main__':
+    main()
