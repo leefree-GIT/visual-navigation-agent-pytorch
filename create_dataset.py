@@ -63,7 +63,7 @@ actions = ["MoveAhead", "RotateRight", "RotateLeft",
 rotation_possible_inplace = 4
 ACTION_SIZE = len(actions)
 StateStruct = namedtuple(
-    "StateStruct", "id pos rot obs feat feat_place bbox obj_visible")
+    "StateStruct", "id pos rot obs semantic_obs feat feat_place bbox obj_visible")
 
 # Extracted from unity/Assets/Scripts/SimObjType.cs
 OBJECT_IDS = {
@@ -247,7 +247,7 @@ def create_states(h5_file, resnet_trained, resnet_places, controller, name, args
 
     # gridSize specifies the coarseness of the grid that the agent navigates on
     state = controller.step(
-        dict(action='Initialize', gridSize=grid_size, renderObjectImage=True))
+        dict(action='Initialize', gridSize=grid_size, renderObjectImage=True, renderClassImage=True))
 
     it = 0
     while it < 5:
@@ -293,7 +293,8 @@ def create_states(h5_file, resnet_trained, resnet_places, controller, name, args
         'observation' not in h5_file.keys() or \
         'location' not in h5_file.keys() or \
         'rotation' not in h5_file.keys() or \
-            'bbox' not in h5_file.keys():
+        'bbox' not in h5_file.keys() or \
+            'semantic_obs' not in h5_file.keys():
         for pos in tqdm(reachable_pos, desc="Feature extraction"):
             state = controller.step(dict(action='Teleport', **pos))
             # Normal/Up/Down view
@@ -308,23 +309,29 @@ def create_states(h5_file, resnet_trained, resnet_places, controller, name, args
                 for a in range(rotation_possible_inplace):
                     state = controller.step(dict(action="RotateLeft"))
                     state.metadata['agent']['rotation']['z'] = state.metadata['agent']['cameraHorizon']
-                    obs_process = resnet50.preprocess_input(state.frame)
-                    obs_process = obs_process[np.newaxis, ...]
+                    feature = None
+                    feature_place = None
+                    if 'resnet_feature' not in h5_file.keys() or args['force']:
+                        obs_process = resnet50.preprocess_input(state.frame)
+                        obs_process = obs_process[np.newaxis, ...]
 
-                    # Extract resnet feature from observation
-                    feature = resnet_trained.predict(obs_process)
+                        # Extract resnet feature from observation
+                        feature = resnet_trained.predict(obs_process)
 
-                    # Extract resnet place feature from observation
-                    input_place = torch.from_numpy(state.frame.copy()/255.0)
-                    input_place = input_place.to("cuda", dtype=torch.float32)
-                    input_place = input_place/255
-                    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                                     std=[0.229, 0.224, 0.225])
-                    input_place = input_place.unsqueeze(0)
-                    input_place = input_place.permute(0, 3, 2, 1)
-                    feature_place = resnet_places(input_place)
-                    feature_place = feature_place.cpu().detach().numpy()
-                    feature_place = feature_place.squeeze()[np.newaxis, ...]
+                        # Extract resnet place feature from observation
+                        input_place = torch.from_numpy(
+                            state.frame.copy()/255.0)
+                        input_place = input_place.to(
+                            "cuda", dtype=torch.float32)
+                        input_place = input_place/255
+                        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                         std=[0.229, 0.224, 0.225])
+                        input_place = input_place.unsqueeze(0)
+                        input_place = input_place.permute(0, 3, 2, 1)
+                        feature_place = resnet_places(input_place)
+                        feature_place = feature_place.cpu().detach().numpy()
+                        feature_place = feature_place.squeeze()[
+                            np.newaxis, ...]
 
                     # Store visible objects from the agent (visible = 1m away from the agent)
                     obj_visible = [obj['objectId']
@@ -334,6 +341,7 @@ def create_states(h5_file, resnet_trained, resnet_places, controller, name, args
                         state.metadata['agent']['position'],
                         state.metadata['agent']['rotation'],
                         obs=state.frame,
+                        semantic_obs=state.class_segmentation_frame,
                         feat=feature,
                         feat_place=feature_place,
                         bbox=json.dumps(
@@ -354,44 +362,63 @@ def create_states(h5_file, resnet_trained, resnet_places, controller, name, args
                     state = controller.step(dict(action="LookUp"))
 
         # Save it to h5 file
-        if 'resnet_feature' in h5_file.keys():
-            del h5_file['resnet_feature']
-        h5_file.create_dataset(
-            'resnet_feature', data=[s.feat for s in states])
+        if args['force'] or 'resnet_feature' not in h5_file.keys():
+            if 'resnet_feature' in h5_file.keys():
+                del h5_file['resnet_feature']
+            h5_file.create_dataset(
+                'resnet_feature', data=[s.feat for s in states])
 
-        if 'observation' in h5_file.keys():
-            del h5_file['observation']
-        h5_file.create_dataset(
-            'observation', data=[s.obs for s in states])
+        if args['force'] or 'observation' not in h5_file.keys():
+            if 'observation' in h5_file.keys():
+                del h5_file['observation']
+            h5_file.create_dataset(
+                'observation', data=[s.obs for s in states])
 
-        if 'location' in h5_file.keys():
-            del h5_file['location']
-        h5_file.create_dataset(
-            'location', data=[list(s.pos.values()) for s in states])
+        if args['force'] or 'location' not in h5_file.keys():
+            if 'location' in h5_file.keys():
+                del h5_file['location']
+            h5_file.create_dataset(
+                'location', data=[list(s.pos.values()) for s in states])
 
-        if 'rotation' in h5_file.keys():
-            del h5_file['rotation']
-        h5_file.create_dataset(
-            'rotation', data=[list(s.rot.values()) for s in states])
+        if args['force'] or 'rotation' not in h5_file.keys():
+            if 'rotation' in h5_file.keys():
+                del h5_file['rotation']
+            h5_file.create_dataset(
+                'rotation', data=[list(s.rot.values()) for s in states])
 
-        if 'bbox' in h5_file.keys():
-            del h5_file['bbox']
-        h5_file.create_dataset(
-            'bbox', data=[s.bbox.encode("ascii", "ignore") for s in states])
+        if args['force'] or 'bbox' not in h5_file.keys():
+            if 'bbox' in h5_file.keys():
+                del h5_file['bbox']
+            h5_file.create_dataset(
+                'bbox', data=[s.bbox.encode("ascii", "ignore") for s in states])
 
-        if 'object_visibility' in h5_file.keys():
-            del h5_file['object_visibility']
-        h5_file.create_dataset(
-            'object_visibility', data=[s.obj_visible.encode("ascii", "ignore") for s in states])
+        if args['force'] or 'object_visibility' not in h5_file.keys():
+            if 'object_visibility' in h5_file.keys():
+                del h5_file['object_visibility']
+            h5_file.create_dataset(
+                'object_visibility', data=[s.obj_visible.encode("ascii", "ignore") for s in states])
+
+        if args['force'] or 'semantic_obs' not in h5_file.keys():
+            if 'semantic_obs' in h5_file.keys():
+                del h5_file['semantic_obs']
+            h5_file.create_dataset(
+                'semantic_obs', data=[s.semantic_obs for s in states])
 
         return states
     else:
+        ind_axis = ['x', 'y', 'z']
         for idx, _ in enumerate(h5_file['location']):
+            pos = dict()
+            rot = dict()
+            for i, _ in enumerate(h5_file['location'][idx]):
+                pos[ind_axis[i]] = h5_file['location'][idx][i]
+                rot[ind_axis[i]] = h5_file['rotation'][idx][i]
             state_struct = StateStruct(
                 idx,
-                pos=h5_file['location'][idx],
-                rot=h5_file['rotation'][idx],
+                pos=pos,
+                rot=rot,
                 obs=None,
+                semantic_obs=None,
                 feat=None,
                 feat_place=None,
                 bbox=None,
@@ -419,6 +446,7 @@ def create_graph(h5_file, states, controller, args):
                                                      state_controller.metadata['agent']['position'],
                                                      state_controller.metadata['agent']['rotation'],
                                                      obs=None,
+                                                     semantic_obs=None,
                                                      feat=None,
                                                      feat_place=None,
                                                      bbox=None,
