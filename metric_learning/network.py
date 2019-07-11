@@ -1,5 +1,6 @@
 import time
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
@@ -93,8 +94,8 @@ class OnlineTripletLoss(nn.Module):
             negative_idxs_l.append([i for i, val in enumerate(neg_idx) if val])
         negative_idxs = np.array(negative_idxs_l)
 
-        # Extract possible triplet based on computed embedding and posible positive/negative
-        # return mask[i, j, k] where i=anchor, j=positive, k=negative
+        # Extract possible triplet based on computed embedding and possible positive/negative
+        # return mask[i, j, k] where i=anchor, j=positive, k=negative == True if candidate
         batch_size = len(target_idx)
         pos_candidate = []
         neg_candidate = []
@@ -129,6 +130,8 @@ class OnlineTripletLoss(nn.Module):
             mask, pos_candidate, neg_candidate = self.get_triplet_mask(
                 target_idx, positive_idxs, negative_idxs)
 
+            # pos_condidate contains indices of embedding for positive candidate
+
             # Compute distance between every embedding
             distance_matrix = torch.zeros(
                 embedding.size()[0], embedding.size()[0])
@@ -138,33 +141,24 @@ class OnlineTripletLoss(nn.Module):
                     distance_matrix[idx_src, idx_dst] = F.pairwise_distance(
                         emb_src.unsqueeze(0), emb_dst.unsqueeze(0))
 
-            # Compute loss for every triplets
-            # loss = np.zeros((batch_size, batch_size, batch_size))
-            # for t_idx, _ in enumerate(target_idx):
-            #     for p_idx, _ in enumerate(target_idx):
-            #         for n_idx, _ in enumerate(target_idx):
-            #             if mask[t_idx, p_idx, n_idx]:
-            #                 ap_distances = distance_matrix[t_idx, p_idx]
-            #                 an_distances = distance_matrix[t_idx, n_idx]
-            #                 pn_distances = distance_matrix[p_idx, n_idx]
-
-            #                 min_neg_dist = torch.min(an_distances, pn_distances)
-            #                 losses = F.relu(
-            #                     ap_distances - min_neg_dist + self.margin)
-            #                 loss[t_idx, p_idx, n_idx] = losses
-
             hardest_positive = None
             hardest_negative = None
+            # Get hardest positive/negative
             for t_idx, _ in enumerate(target_idx):
                 # Positive candidate
                 pos_ind = torch.LongTensor([-1])
+                ap_distance = None
                 if pos_candidate[t_idx]:
                     dist = distance_matrix[t_idx, pos_candidate[t_idx]]
                     val, pos_ind = torch.max(dist, dim=0)
+                    ap_distance = val
                     pos_ind = pos_ind.unsqueeze(0)
                 # Negative candidate
                 neg_ind = torch.LongTensor([-1])
-                if neg_candidate[t_idx]:
+                if pos_candidate[t_idx] and neg_candidate[t_idx]:
+                    # dist = ap_distance - \
+                    #     distance_matrix[t_idx,
+                    #                     neg_candidate[t_idx]] + self.margin
                     dist = distance_matrix[t_idx, neg_candidate[t_idx]]
                     val, neg_ind = torch.min(dist, dim=0)
                     neg_ind = neg_ind.unsqueeze(0)
@@ -178,31 +172,53 @@ class OnlineTripletLoss(nn.Module):
                 else:
                     hardest_negative = torch.cat((hardest_negative, neg_ind))
 
+        # shape(hardest_positive) = len(target_idx, 1) Hardest per anchor
+        # hardest_positive contains indices of hardest pos_candidate or -1 if no pos_candidate
         valid_idx = [t_idx for t_idx, _ in enumerate(
             target_idx) if hardest_positive[t_idx] != -1 and hardest_negative[t_idx] != -1]
 
+        # for v in valid_idx:
+        #     pos_cand = hardest_positive[v]
+        #     pos_indx = target_idx[pos_candidate[v][pos_cand]]
+
+        #     print("Positive candidate", pos_cand)
+        #     print("Positive index", pos_indx)
+        #     print(target_idx)
+        #     plt.figure("Anchor")
+        #     plt.imshow(self.h5_file["observation"][target_idx[v]])
+        #     plt.figure("Positive")
+        #     print(np.shape(pos_candidate))
+        #     print(self.h5_file["shortest_path_distance"]
+        #           [target_idx[v]][pos_indx])
+        #     plt.imshow(self.h5_file["observation"][pos_indx])
+        #     plt.show()
+        #     exit()
+
         anc_emb = embedding[valid_idx]
-        pos_emb = embedding[hardest_positive[valid_idx]]
-        neg_emb = embedding[hardest_negative[valid_idx]]
-        ap_distances = F.pairwise_distance(anc_emb, pos_emb)
-        an_distances = F.pairwise_distance(anc_emb, neg_emb)
-        pn_distances = F.pairwise_distance(pos_emb, neg_emb)
+
+        hardest_pos_ind_embedding = []
+        hardest_neg_ind_embedding = []
+        for v in valid_idx:
+            hardest_pos_ind_embedding.append(
+                pos_candidate[v][hardest_positive[v]].squeeze())
+            hardest_neg_ind_embedding.append(
+                neg_candidate[v][hardest_negative[v]].squeeze())
+
+        # From positive candidate pos_candidate[valid_idx]
+        # get the hardest [hardest_positive[valid_idx]]
+        pos_emb = embedding[hardest_pos_ind_embedding]
+
+        # From negative candidate neg_candidate[valid_idx]
+        # get the hardest [hardest_negative[valid_idx]]
+        neg_emb = embedding[hardest_neg_ind_embedding]
+
+        pdist = nn.PairwiseDistance(p=2)
+        ap_distances = pdist(anc_emb, pos_emb)
+        an_distances = pdist(anc_emb, neg_emb)
+        pn_distances = pdist(pos_emb, neg_emb)
 
         min_neg_dist = torch.min(an_distances, pn_distances)
         loss = F.relu(
             ap_distances - min_neg_dist + self.margin)
-        # hardest_positive = np.argmax(
-        #     distance_matrix[:, pos_candidate], axis=1)
-        # hardest_negative = np.argmin(
-        #     distance_matrix[:, neg_candidate], axis=1)
-        # ap_distances = distance_matrix[embedding, hardest_positive]
-        # an_distances = distance_matrix[embedding, hardest_negative]
-        # pn_distances = distance_matrix[hardest_positive, hardest_negative]
-
-        # min_neg_dist = torch.min(an_distances, pn_distances)
-        # losses = F.relu(
-        #     ap_distances - min_neg_dist + self.margin)
-        # positive_dist = distance_matrix[:, mask[:, :, ]]
-        # negative_dist = distance_matrix[:, mask[:, , :]]
 
         return loss.mean()

@@ -78,7 +78,7 @@ class MetricLearning():
             # Load Triplet Network
             model = TripletNetwork(EmbeddingNet()).to(device)
 
-        train_loader = DataLoader(dataset, batch_size=16,
+        train_loader = DataLoader(dataset, batch_size=64,
                                   shuffle=True, pin_memory=True, num_workers=1)
 
         # Load Triplet loss
@@ -101,7 +101,7 @@ class MetricLearning():
         writer = SummaryWriter(self.log_path.replace("{folder}", ""))
 
         # Use blog optimizer/scheduler
-        optimizer = optim.Adam(self.model.parameters(), lr=1e-3)
+        optimizer = optim.Adam(self.model.parameters(), lr=1e-4)
         scheduler = lr_scheduler.StepLR(
             optimizer, 16, gamma=0.1, last_epoch=-1)
 
@@ -124,8 +124,8 @@ class MetricLearning():
                 self.dataset.set_output_obs(True)
             else:
                 self.dataset.set_output_obs(False)
-
-            for batch in tqdm(self.train_loader, desc="Batch"):
+            t_batch = tqdm(self.train_loader, desc="Batch")
+            for batch in t_batch:
                 optimizer.zero_grad()
                 (targets, positives, negatives, observations,
                  indexes) = batch
@@ -150,6 +150,7 @@ class MetricLearning():
                     loss = self.lossFun(
                         emb_targets, indexes, positives, negatives)
                     losses.append(loss.cpu().item())
+                    t_batch.set_postfix(loss=losses[-1])
                     loss.backward()
 
                     optimizer.step()
@@ -280,7 +281,7 @@ def main():
     method = "word2vec"
     mask_size = 16
     mode = "Online"  # MNIST, Online, Offline
-    scene = "FloorPlan5"
+    scene = "FloorPlan1"
 
     cuda = torch.cuda.is_available()
     device = torch.device("cpu")
