@@ -127,6 +127,7 @@ class Evaluation:
                 scene_stats[scene_scope] = dict()
                 scene_stats[scene_scope]["length"] = list()
                 scene_stats[scene_scope]["spl"] = list()
+                scene_stats[scene_scope]["success"] = list()
 
                 for task_scope in items:
 
@@ -216,7 +217,7 @@ class Evaluation:
                             ep_reward += env.reward
                             terminal = env.terminal
 
-                            if ep_t == 5000:
+                            if ep_t == 500:
                                 break
                             if env.collided:
                                 ep_collision += 1
@@ -262,6 +263,8 @@ class Evaluation:
                     log.write('')
                     scene_stats[scene_scope]["length"].extend(ep_lengths)
                     scene_stats[scene_scope]["spl"].append(ep_spl)
+                    scene_stats[scene_scope]["success"].append(
+                        ep_success_percent)
 
                     tmpData = [np.mean(
                         ep_rewards), np.mean(ep_lengths), np.mean(ep_collisions), ep_success_percent, ep_spl]
@@ -355,9 +358,10 @@ class Evaluation:
 
             log.write('\nResults (average trajectory length):')
             for scene_scope in scene_stats:
-                log.write('%s: %.2f steps %.2f spl' %
+                log.write('%s: %.2f steps | %.2f spl | %.2f%% success' %
                           (scene_scope, np.mean(scene_stats[scene_scope]["length"]), np.mean(
-                              scene_stats[scene_scope]["spl"])))
+                              scene_stats[scene_scope]["spl"]), np.mean(
+                              scene_stats[scene_scope]["success"])))
             # Write data to csv
             writer_csv.writerow(list(resultData))
             break
