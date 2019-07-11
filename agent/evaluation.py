@@ -28,7 +28,7 @@ def prepare_csv(file, scene_task):
     writer = csv.writer(f)
     header = ['']
     header2lvl = ['Checkpoints']
-    values = ['_reward', '_length', '_collision', '_success']
+    values = ['_reward', '_length', '_collision', '_success', '_spl']
     for scene_scope, tasks_scope in scene_task:
         for task in tasks_scope:
             for val in values:
@@ -124,7 +124,9 @@ class Evaluation:
             for scene_scope, items in self.config['task_list'].items():
                 scene_net = self.scene_net
                 scene_net.eval()
-                scene_stats[scene_scope] = list()
+                scene_stats[scene_scope] = dict()
+                scene_stats[scene_scope]["length"] = list()
+                scene_stats[scene_scope]["spl"] = list()
 
                 for task_scope in items:
 
@@ -255,13 +257,14 @@ class Evaluation:
                     log.write('episode success: %.2f%%' %
                               ep_success_percent)
 
-                    log.write('episode SLP: %.2f' % (np.sum(
-                        ep_spl) / self.config['num_episode']))
+                    ep_spl = np.sum(ep_spl) / self.config['num_episode']
+                    log.write('episode SPL: %.2f' % ep_spl)
                     log.write('')
-                    scene_stats[scene_scope].extend(ep_lengths)
+                    scene_stats[scene_scope]["length"].extend(ep_lengths)
+                    scene_stats[scene_scope]["spl"].append(ep_spl)
 
                     tmpData = [np.mean(
-                        ep_rewards), np.mean(ep_lengths), np.mean(ep_collisions), ep_success_percent]
+                        ep_rewards), np.mean(ep_lengths), np.mean(ep_collisions), ep_success_percent, ep_spl]
                     resultData = np.hstack((resultData, tmpData))
 
                     # Show best episode from evaluation
@@ -352,10 +355,12 @@ class Evaluation:
 
             log.write('\nResults (average trajectory length):')
             for scene_scope in scene_stats:
-                log.write('%s: %.2f steps' %
-                          (scene_scope, np.mean(scene_stats[scene_scope])))
+                log.write('%s: %.2f steps %.2f spl' %
+                          (scene_scope, np.mean(scene_stats[scene_scope]["length"]), np.mean(
+                              scene_stats[scene_scope]["spl"])))
             # Write data to csv
             writer_csv.writerow(list(resultData))
+            break
 
 
 '''
