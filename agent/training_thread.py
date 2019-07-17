@@ -162,7 +162,7 @@ class TrainingThread(mp.Process):
         for t in range(self.max_t):
 
             # Resnet feature are extracted or computed here
-            if self.method == 'word2vec':
+            if self.method == 'word2vec' or self.method == 'word2vec_noconv':
                 state = {
                     "current": self.envs[idx].render('resnet_features'),
                     "goal": self.envs[idx].render_target('word_features'),
@@ -185,7 +185,7 @@ class TrainingThread(mp.Process):
                     "goal": self.envs[idx].render_target('resnet_features'),
                 }
 
-            if self.method == 'word2vec' or self.method == 'aop':
+            if self.method == 'word2vec' or self.method == 'aop' or self.method == 'word2vec_noconv':
                 x_processed = torch.from_numpy(state["current"])
                 goal_processed = torch.from_numpy(state["goal"])
                 object_mask = torch.from_numpy(state['object_mask'])
@@ -299,7 +299,7 @@ class TrainingThread(mp.Process):
         if terminal_end:
             return 0.0, results, rollout_path, terminal_end
         else:
-            if self.method == 'word2vec':
+            if self.method == 'word2vec' or self.method == 'word2vec_noconv':
                 state = {
                     "current": self.envs[idx].render('resnet_features'),
                     "goal": self.envs[idx].render_target('word_features'),
@@ -321,7 +321,7 @@ class TrainingThread(mp.Process):
                     "current": self.envs[idx].render('resnet_features'),
                     "goal": self.envs[idx].render_target('word_features')
                 }
-            if self.method == 'word2vec' or self.method == 'aop':
+            if self.method == 'word2vec' or self.method == 'aop' or self.method == 'word2vec_noconv':
                 x_processed = torch.from_numpy(state["current"])
                 goal_processed = torch.from_numpy(state["goal"])
                 object_mask = torch.from_numpy(state['object_mask'])

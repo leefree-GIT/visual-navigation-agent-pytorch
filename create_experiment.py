@@ -7,7 +7,7 @@ import numpy as np
 names = []
 SCENES = [0, 200, 300, 400]
 TRAIN_SPLIT = (1, 22)
-TEST_SPLIT = (22, 27)
+TEST_SPLIT = (21, 26)
 
 
 KITCHEN_OBJECT_CLASS_LIST = [

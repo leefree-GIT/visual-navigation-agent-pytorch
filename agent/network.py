@@ -62,6 +62,20 @@ class SharedNetwork(nn.Module):
             self.fc_merge = nn.Linear(
                 512+self.word_embedding_size+self.flat_input, 512)
 
+        elif self.method == 'word2vec_noconv':
+            self.word_embedding_size = 300
+            self.fc_target = nn.Linear(
+                self.word_embedding_size, self.word_embedding_size)
+            # Observation layer
+            self.fc_observation = nn.Linear(8192, 512)
+
+            self.flat_input = mask_size * mask_size
+            self.fc_similarity = nn.Linear(self.flat_input, self.flat_input)
+
+            # Merge layer
+            self.fc_merge = nn.Linear(
+                512+self.word_embedding_size+self.flat_input, 512)
+
         elif self.method == "word2vec_nosimi":
             self.word_embedding_size = 300
             self.fc_target = nn.Linear(
@@ -105,6 +119,30 @@ class SharedNetwork(nn.Module):
             z = self.pool(F.relu(self.conv1(z)))
             z = self.pool(F.relu(self.conv2(z)))
             z = z.view(-1)
+
+            # xy = torch.stack([x, y], 0).view(-1)
+            xyz = torch.cat([x, y, z])
+            xyz = self.fc_merge(xyz)
+            xyz = F.relu(xyz, True)
+            return xyz
+
+        elif self.method == 'word2vec_noconv':
+            # x is the observation
+            # y is the target
+            # z is the object location mask
+            (x, y, z) = inp
+
+            x = x.view(-1)
+            x = self.fc_observation(x)
+            x = F.relu(x, True)
+
+            y = y.view(-1)
+            y = self.fc_target(y)
+            y = F.relu(y, True)
+
+            z = z.view(-1)
+            z = self.fc_similarity(z)
+            z = F.relu(z, True)
 
             # xy = torch.stack([x, y], 0).view(-1)
             xyz = torch.cat([x, y, z])

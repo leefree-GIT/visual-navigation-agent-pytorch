@@ -61,36 +61,38 @@ class Logger(object):
 class Evaluation:
     def __init__(self, config):
         self.config = config
-        self.shared_net = SharedNetwork(
-            self.config['method'], self.config.get('mask_size', 5))
-        self.scene_net = SceneSpecificNetwork(self.config['action_size'])
+        self.method = config['method']
+        if self.method != "random":
+            self.shared_net = SharedNetwork(
+                self.config['method'], self.config.get('mask_size', 5))
+            self.scene_net = SceneSpecificNetwork(self.config['action_size'])
 
         self.checkpoints = []
         self.checkpoint_id = 0
         self.saver = None
         self.chk_numbers = None
-        self.method = config['method']
 
     @staticmethod
     def load_checkpoints(config, fail=True):
+        evaluation = Evaluation(config)
         checkpoint_path = config.get(
             'checkpoint_path', 'model/checkpoint-{checkpoint}.pth')
 
         checkpoints = []
         (base_name, chk_numbers) = find_restore_points(checkpoint_path, fail)
-        try:
-            for chk_name in base_name:
-                state = torch.load(
-                    open(os.path.join(os.path.dirname(checkpoint_path), chk_name), 'rb'))
-                checkpoints.append(state)
-        except Exception as e:
-            print("Error loading", e)
-            exit()
-        evaluation = Evaluation(config)
+        if evaluation.method != "random":
+            try:
+                for chk_name in base_name:
+                    state = torch.load(
+                        open(os.path.join(os.path.dirname(checkpoint_path), chk_name), 'rb'))
+                    checkpoints.append(state)
+            except Exception as e:
+                print("Error loading", e)
+                exit()
+            evaluation.saver = TrainingSaver(evaluation.shared_net,
+                                             evaluation.scene_net, None, evaluation.config)
         evaluation.chk_numbers = chk_numbers
         evaluation.checkpoints = checkpoints
-        evaluation.saver = TrainingSaver(evaluation.shared_net,
-                                         evaluation.scene_net, None, evaluation.config)
         return evaluation
 
     def restore(self):
@@ -119,11 +121,13 @@ class Evaluation:
             else:
                 log = Logger(self.config['base_path'] + 'eval' +
                              str(chk_id) + '.log')
-            self.restore()
-            self.next_checkpoint()
+            if self.method != "random":
+                self.restore()
+                self.next_checkpoint()
             for scene_scope, items in self.config['task_list'].items():
-                scene_net = self.scene_net
-                scene_net.eval()
+                if self.method != "random":
+                    scene_net = self.scene_net
+                    scene_net.eval()
                 scene_stats[scene_scope] = dict()
                 scene_stats[scene_scope]["length"] = list()
                 scene_stats[scene_scope]["spl"] = list()
@@ -159,7 +163,7 @@ class Evaluation:
                         actions = []
                         ep_start.append(env.current_state_id)
                         while not terminal:
-                            if self.method == 'word2vec':
+                            if self.method == 'word2vec' or self.method == 'word2vec_noconv':
                                 state = {
                                     "current": env.render('resnet_features'),
                                     "goal": env.render_target('word_features'),
@@ -182,7 +186,7 @@ class Evaluation:
                                     "goal": env.render_target('resnet_features'),
                                 }
 
-                            if self.method == 'word2vec' or self.method == 'aop':
+                            if self.method == 'word2vec' or self.method == 'aop' or self.method == 'word2vec_noconv':
                                 x_processed = torch.from_numpy(
                                     state["current"])
                                 goal_processed = torch.from_numpy(
@@ -200,17 +204,20 @@ class Evaluation:
 
                                 embedding = self.shared_net.forward(
                                     (x_processed, goal_processed,))
+                            elif self.method == "random":
+                                action = np.random.randint(env.action_size)
 
-                            (policy, _,) = scene_net.forward(embedding)
-                            embedding = embedding.detach().numpy()
+                            if self.method != "random":
+                                (policy, _,) = scene_net.forward(embedding)
+                                embedding = embedding.detach().numpy()
 
-                            with torch.no_grad():
-                                action = F.softmax(policy, dim=0).multinomial(
-                                    1).data.numpy()[0]
+                                with torch.no_grad():
+                                    action = F.softmax(policy, dim=0).multinomial(
+                                        1).data.numpy()[0]
 
-                            if env.current_state_id not in state_ids:
-                                state_ids.append(env.current_state_id)
-                                embedding_vectors.append(embedding)
+                                if env.current_state_id not in state_ids:
+                                    state_ids.append(env.current_state_id)
+                                    embedding_vectors.append(embedding)
 
                             env.step(action)
                             actions.append(action)
@@ -236,6 +243,7 @@ class Evaluation:
                                 ep_actions = ep_actions[:-1]
                                 ep_lengths = ep_lengths[:-1]
                                 ep_rewards = ep_rewards[:-1]
+                                ep_start = ep_start[:-1]
 
                         elif ep_t <= 500:
                             ep_success = ep_success + 1
@@ -259,7 +267,7 @@ class Evaluation:
                               ep_success_percent)
 
                     ep_spl = np.sum(ep_spl) / self.config['num_episode']
-                    log.write('episode SPL: %.2f' % ep_spl)
+                    log.write('episode SPL: %.3f' % ep_spl)
                     log.write('')
                     scene_stats[scene_scope]["length"].extend(ep_lengths)
                     scene_stats[scene_scope]["spl"].append(ep_spl)
@@ -331,34 +339,34 @@ class Evaluation:
                             for i in range(10):
                                 video.write(img)
                             video.release()
+                    if self.method != "random":
+                        # Use tensorboard to plot embeddings
+                        if self.config['train']:
+                            embedding_writer = SummaryWriter(
+                                self.config['log_path'] + '/embeddings_train/' + scene_scope + '_' + str(chk_id))
+                        else:
+                            embedding_writer = SummaryWriter(
+                                self.config['log_path'] + '/embeddings_eval/' + scene_scope + '_' + str(chk_id))
+                        obss = []
 
-                    # Use tensorboard to plot embeddings
-                    if self.config['train']:
-                        embedding_writer = SummaryWriter(
-                            self.config['log_path'] + '/embeddings_train/' + scene_scope + '_' + str(chk_id))
-                    else:
-                        embedding_writer = SummaryWriter(
-                            self.config['log_path'] + '/embeddings_eval/' + scene_scope + '_' + str(chk_id))
-                    obss = []
+                        for indx, obs in enumerate(env.h5_file['observation']):
+                            if indx in state_ids:
+                                img = Image.fromarray(obs)
+                                img = img.resize((64, 64))
+                                obss.append(np.array(img))
 
-                    for indx, obs in enumerate(env.h5_file['observation']):
-                        if indx in state_ids:
-                            img = Image.fromarray(obs)
-                            img = img.resize((64, 64))
-                            obss.append(np.array(img))
+                        obss = np.transpose(obss, (0, 3, 1, 2))
+                        obss = obss / 255
+                        obss = torch.from_numpy(obss)
 
-                    obss = np.transpose(obss, (0, 3, 1, 2))
-                    obss = obss / 255
-                    obss = torch.from_numpy(obss)
-
-                    # Write embeddings
-                    embedding_writer.add_embedding(
-                        embedding_vectors, label_img=obss,
-                        tag=task_scope['object'], global_step=chk_id)
+                        # Write embeddings
+                        embedding_writer.add_embedding(
+                            embedding_vectors, label_img=obss,
+                            tag=task_scope['object'], global_step=chk_id)
 
             log.write('\nResults (average trajectory length):')
             for scene_scope in scene_stats:
-                log.write('%s: %.2f steps | %.2f spl | %.2f%% success' %
+                log.write('%s: %.2f steps | %.3f spl | %.2f%% success' %
                           (scene_scope, np.mean(scene_stats[scene_scope]["length"]), np.mean(
                               scene_stats[scene_scope]["spl"]), np.mean(
                               scene_stats[scene_scope]["success"])))
