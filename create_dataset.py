@@ -588,6 +588,7 @@ def main():
     parser = argparse.ArgumentParser(description='Dataset creation.')
     parser.add_argument('--eval', action='store_true')
     parser.add_argument('--force', action='store_true')
+    parser.add_argument('--scene', type=str, default=None)
     args = vars(parser.parse_args())
     controller = ai2thor.controller.Controller()
 
@@ -617,6 +618,9 @@ def main():
 
     object_feature, object_vector = extract_object_feature(
         resnet_trained, h, w)
+
+    if args['scene'] is not None:
+        names = [args['scene']]
 
     pbar_names = tqdm(names)
 
