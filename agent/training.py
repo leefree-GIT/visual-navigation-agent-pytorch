@@ -102,8 +102,8 @@ class TrainingOptimizer:
         return self.global_step.item()
 
     def _ensure_shared_grads(self, model, shared_model, gpu=False):
-        for param, shared_param in zip(model.parameters(),
-                                       shared_model.parameters()):
+        for param, shared_param in zip(filter(lambda p: p.requires_grad, model.parameters()),
+                                       filter(lambda p: p.requires_grad, shared_model.parameters())):
             if shared_param.grad is not None and not gpu:
                 return
             elif not gpu:

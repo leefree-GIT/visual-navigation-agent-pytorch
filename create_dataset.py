@@ -271,12 +271,12 @@ def create_states(h5_file, resnet_trained, resnet_places, controller, name, args
         if np.all(obj_present):
             break
         else:
-            print("obj not found", np.ma.masked_array(
-                scene_task, mask=obj_present))
             it = it + 1
+    print(it)
+    # Store available objects
     available_obj = np.ma.masked_array(
         scene_task, mask=np.logical_not(obj_present)).compressed()
-    print(available_obj)
+    print("Obj available", available_obj)
 
     h5_file.attrs["task_present"] = np.string_(
         json.dumps(available_obj, cls=NumpyEncoder))
@@ -619,8 +619,20 @@ def main():
     object_feature, object_vector = extract_object_feature(
         resnet_trained, h, w)
 
+    custom_scene = False
     if args['scene'] is not None:
         names = [args['scene']]
+        custom_scene = True
+        scene_id = int(names[0].split("FloorPlan")[1])
+        scene_type = -1
+        if scene_id > 0 and scene_id < 100:
+            scene_type = 0
+        elif scene_id > 200 and scene_id < 300:
+            scene_type = 1
+        elif scene_id > 300 and scene_id < 400:
+            scene_type = 2
+        elif scene_id > 400 and scene_id < 500:
+            scene_type = 3
 
     pbar_names = tqdm(names)
 
@@ -641,8 +653,12 @@ def main():
                              object_feature, object_vector)
 
         # Construct all possible states
-        states = create_states(h5_file, resnet_trained, resnet_places,
-                               controller, name, args, scene_type[idx])
+        if custom_scene:
+            states = create_states(h5_file, resnet_trained, resnet_places,
+                                   controller, name, args, scene_type)
+        else:
+            states = create_states(h5_file, resnet_trained, resnet_places,
+                                   controller, name, args, scene_type[idx])
 
         # Create action-state graph
         graph = create_graph(h5_file, states, controller, args)

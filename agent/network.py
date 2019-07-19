@@ -1,6 +1,15 @@
+import json
+import math
+
+import h5py
+import numpy as np
+import scipy.sparse as sp
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.parameter import Parameter
+
+import torchvision.models as models
 
 
 def compare_models(model_1, model_2):
@@ -98,6 +107,21 @@ class SharedNetwork(nn.Module):
 
             # Merge layer
             self.fc_merge = nn.Linear(1024, 512)
+
+        elif self.method == 'gcn':
+            self.word_embedding_size = 300
+            self.fc_target = nn.Linear(
+                self.word_embedding_size, self.word_embedding_size)
+            # Observation layer
+            self.fc_observation = nn.Linear(8192, 512)
+
+            # GCN layer
+            self.gcn = GCN()
+
+            # Merge word_embedding(300) + observation(512) + gcn(512)
+            self.fc_merge = nn.Linear(
+                self.word_embedding_size + 512 + 512, 512)
+
         else:
             raise Exception("Please choose a method")
 
@@ -203,6 +227,27 @@ class SharedNetwork(nn.Module):
             xy = self.fc_merge(xy)
             xy = F.relu(xy, True)
             return xy
+        elif self.method == 'gcn':
+            # x is the observation (resnet feature stacked)
+            # y is the target
+            # z is the observation (RGB frame)
+            (x, y, z) = inp
+
+            x = x.view(-1)
+            x = self.fc_observation(x)
+            x = F.relu(x, True)
+
+            y = y.view(-1)
+            y = self.fc_target(y)
+            y = F.relu(y, True)
+
+            z = self.gcn(z)
+
+            # xy = torch.stack([x, y], 0).view(-1)
+            xyz = torch.cat([x, y, z])
+            xyz = self.fc_merge(xyz)
+            xyz = F.relu(xyz, True)
+            return xyz
 
 
 class SceneSpecificNetwork(nn.Module):
@@ -251,3 +296,118 @@ class ActorCriticLoss(nn.Module):
         # Equivalent to 0.5 * l2 loss
         value_loss = (0.5 * 0.5) * F.mse_loss(value, r, size_average=False)
         return value_loss + policy_loss
+
+
+# Code borrowed from https://github.com/tkipf/pygcn
+class GraphConvolution(nn.Module):
+    """
+    Simple GCN layer, similar to https://arxiv.org/abs/1609.02907
+    """
+
+    def __init__(self, in_features, out_features, bias=True):
+        super(GraphConvolution, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.weight = Parameter(torch.FloatTensor(in_features, out_features))
+        if bias:
+            self.bias = Parameter(torch.FloatTensor(out_features))
+        else:
+            self.register_parameter('bias', None)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        stdv = 1. / math.sqrt(self.weight.size(1))
+        self.weight.data.uniform_(-stdv, stdv)
+        if self.bias is not None:
+            self.bias.data.uniform_(-stdv, stdv)
+
+    def forward(self, input, adj):
+        support = torch.mm(input, self.weight)
+        output = torch.spmm(adj, support)
+        if self.bias is not None:
+            return output + self.bias
+        else:
+            return output
+
+    def __repr__(self):
+        return self.__class__.__name__ + ' (' \
+            + str(self.in_features) + ' -> ' \
+            + str(self.out_features) + ')'
+
+
+# Code borrowed from https://github.com/allenai/savn/
+def normalize_adj(adj):
+    adj = sp.coo_matrix(adj)
+    rowsum = np.array(adj.sum(1))
+    d_inv_sqrt = np.power(rowsum, -0.5).flatten()
+    d_inv_sqrt[np.isinf(d_inv_sqrt)] = 0.0
+    d_mat_inv_sqrt = sp.diags(d_inv_sqrt)
+    return adj.dot(d_mat_inv_sqrt).transpose().dot(d_mat_inv_sqrt).tocoo()
+
+
+class GCN(nn.Module):
+    def __init__(self):
+        super(GCN, self).__init__()
+
+        self.resnet50 = models.resnet50(pretrained=True)
+        for p in self.resnet50.parameters():
+            p.requires_grad = False
+        self.resnet50.eval()
+
+        # Load adj matrix for GCN
+        A_raw = torch.load("./data/gcn/adjmat.dat")
+        A = normalize_adj(A_raw).tocsr().toarray()
+        self.A = torch.nn.Parameter(torch.Tensor(A))
+
+        objects = open("./data/gcn/objects.txt").readlines()
+        objects = [o.strip() for o in objects]
+        self.n = len(objects)
+        self.register_buffer('all_glove', torch.zeros(self.n, 300))
+
+        # Every dataset contain the same word embedding use FloorPlan1
+        h5_file = h5py.File("./data/FloorPlan1.h5", 'r')
+        object_ids = json.loads(h5_file.attrs['object_ids'])
+        object_vector = h5_file['object_vector']
+
+        word_embedding = {k: object_vector[v] for k, v in object_ids.items()}
+        for i, o in enumerate(objects):
+            self.all_glove[i, :] = torch.from_numpy(word_embedding[o])
+
+        h5_file.close()
+
+        nhid = 1024
+        # Convert word embedding to input for gcn
+        self.word_to_gcn = nn.Linear(300, 512)
+
+        # Convert resnet feature to input for gcn
+        self.resnet_to_gcn = nn.Linear(1000, 512)
+
+        # GCN net
+        self.gc1 = GraphConvolution(512 + 512, nhid)
+        self.gc2 = GraphConvolution(nhid, nhid)
+        self.gc3 = GraphConvolution(nhid, 1)
+
+        self.mapping = nn.Linear(self.n, 512)
+
+    def gcn_embed(self, x):
+
+        resnet_score = self.resnet50(x)
+        resnet_embed = self.resnet_to_gcn(resnet_score)
+        word_embedding = self.word_to_gcn(self.all_glove)
+
+        output = torch.cat(
+            (resnet_embed.repeat(self.n, 1), word_embedding), dim=1)
+        return output
+
+    def forward(self, x):
+
+        # x = (current_obs)
+        # Convert input to gcn input
+        x = self.gcn_embed(x)
+
+        x = F.relu(self.gc1(x, self.A))
+        x = F.relu(self.gc2(x, self.A))
+        x = F.relu(self.gc3(x, self.A))
+        x = x.view(-1)
+        x = self.mapping(x)
+        return x
