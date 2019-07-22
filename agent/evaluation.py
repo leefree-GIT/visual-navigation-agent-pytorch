@@ -21,6 +21,7 @@ from agent.gpu_thread import GPUThread
 from agent.network import SceneSpecificNetwork, SharedNetwork
 from agent.training import TrainingSaver
 from agent.utils import find_restore_points
+from torchvision import transforms
 
 
 def prepare_csv(file, scene_task):
@@ -188,6 +189,16 @@ class Evaluation:
                                     "current": env.render('resnet_features'),
                                     "goal": env.render_target('resnet_features'),
                                 }
+                            elif self.method == 'gcn':
+                                normalize = transforms.Compose([
+                                    transforms.ToTensor(),
+                                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[
+                                        0.229, 0.224, 0.225])])
+                                state = {
+                                    "current": env.render('resnet_features'),
+                                    "goal": env.render_target('word_features'),
+                                    "observation": normalize(env.observation).unsqueeze(0),
+                                }
 
                             if self.method == 'word2vec' or self.method == 'aop' or self.method == 'word2vec_noconv':
                                 x_processed = torch.from_numpy(
@@ -209,6 +220,15 @@ class Evaluation:
                                     (x_processed, goal_processed,))
                             elif self.method == "random":
                                 action = np.random.randint(env.action_size)
+                            elif self.method == 'gcn':
+                                x_processed = torch.from_numpy(
+                                    state["current"])
+                                goal_processed = torch.from_numpy(
+                                    state["goal"])
+                                obs = state['observation']
+
+                                embedding = self.shared_net.forward(
+                                    (x_processed, goal_processed, obs,))
 
                             if self.method != "random":
                                 (policy, _,) = scene_net.forward(embedding)
@@ -380,7 +400,7 @@ class Evaluation:
                             for i in range(10):
                                 video.write(img)
                             video.release()
-                    if self.method != "random":
+                    if self.method != "random" and self.method != "gcn":
                         # Use tensorboard to plot embeddings
                         if self.config['train']:
                             embedding_writer = SummaryWriter(
