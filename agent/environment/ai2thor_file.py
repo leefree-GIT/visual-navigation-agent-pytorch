@@ -114,7 +114,7 @@ class THORDiscreteEnvironment(Environment):
                     break
 
         # LAST instruction
-        if self.method == 'word2vec' or self.method == 'word2vec_nosimi' or self.method == 'word2vec_noconv' or self.method == "random" or self.method == 'gcn':
+        if self.method == 'word2vec' or self.method == 'word2vec_nosimi' or self.method == 'word2vec_noconv'or self.method == 'gcn':
             self.s_target = self.object_vector[self.object_ids[self.terminal_state['object']]]
 
         elif self.method == 'aop':
@@ -129,6 +129,8 @@ class THORDiscreteEnvironment(Environment):
                         terminal_id = i
                         break
             self.s_target = self._tiled_state(terminal_id)
+        elif self.method == "random":
+            pass
         else:
             raise Exception('Please choose a method')
 
@@ -153,7 +155,8 @@ class THORDiscreteEnvironment(Environment):
         # reset parameters
         self.current_state_id = k
         self.start_state_id = k
-        self.s_t = self._tiled_state(self.current_state_id)
+        if self.method != "random":
+            self.s_t = self._tiled_state(self.current_state_id)
         self.collided = False
         self.terminal = False
         self.bbox_area = 0
@@ -190,8 +193,9 @@ class THORDiscreteEnvironment(Environment):
             self.terminal = False
             self.collided = True
 
-        self.s_t = np.append(self.s_t[:, 1:], self._get_state(
-            self.current_state_id), axis=1)
+        if self.method != "random":
+            self.s_t = np.append(self.s_t[:, 1:], self._get_state(
+                self.current_state_id), axis=1)
 
         # Retrieve bounding box area of target object class
         self.bbox_area = self._get_max_bbox_area(

@@ -130,3 +130,5 @@ data/*
 !metric_learning
 !metric_learning/*
 !metric_learning.py
+
+!sixaxis_explore.py
