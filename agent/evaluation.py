@@ -132,6 +132,8 @@ class Evaluation:
                 scene_stats[scene_scope]["length"] = list()
                 scene_stats[scene_scope]["spl"] = list()
                 scene_stats[scene_scope]["success"] = list()
+                scene_stats[scene_scope]["spl_long"] = list()
+                scene_stats[scene_scope]["success_long"] = list()
 
                 for task_scope in items:
 
@@ -150,8 +152,9 @@ class Evaluation:
                     ep_collisions = []
                     ep_actions = []
                     ep_start = []
-                    ep_success = 0
+                    ep_success = []
                     ep_spl = []
+                    ep_shortest_distance = []
                     embedding_vectors = []
                     state_ids = list()
                     for i_episode in range(self.config['num_episode']):
@@ -233,56 +236,94 @@ class Evaluation:
                         ep_actions.append(actions)
                         ep_lengths.append(ep_t)
                         ep_rewards.append(ep_reward)
+                        ep_shortest_distance.append(env.shortest_path_terminal(
+                            ep_start[-1]))
+                        ep_collisions.append(ep_collision)
+
+                        # Compute SPL
+                        spl = env.shortest_path_terminal(
+                            ep_start[-1])/ep_t
+                        ep_spl.append(spl)
+
                         if self.config['reward'] == 'soft_goal':
                             if env.success:
-                                ep_success = ep_success + 1
-                                spl = env.shortest_path_terminal(
-                                    ep_start[-1])/ep_t
-                                ep_spl.append(spl)
+                                ep_success.append(True)
                             else:
-                                ep_actions = ep_actions[:-1]
-                                ep_lengths = ep_lengths[:-1]
-                                ep_rewards = ep_rewards[:-1]
-                                ep_start = ep_start[:-1]
+                                ep_success.append(False)
 
                         elif ep_t <= 500:
-                            ep_success = ep_success + 1
-                            # Compute SPL
-                            spl = env.shortest_path_terminal(ep_start[-1])/ep_t
-                            ep_spl.append(spl)
-                        ep_collisions.append(ep_collision)
+                            ep_success.append(True)
+                        else:
+                            ep_success.append(False)
                         log.write("episode #{} ends after {} steps".format(
                             i_episode, ep_t))
 
+                    # Get indice of succeed episodes
+                    ind_succeed_ep = [
+                        i for (i, ep_suc) in enumerate(ep_success) if ep_suc]
+                    ep_rewards = np.array(ep_rewards)
+                    ep_lengths = np.array(ep_lengths)
+                    ep_collisions = np.array(ep_collisions)
+                    ep_spl = np.array(ep_spl)
+                    ep_start = np.array(ep_start)
+
                     log.write('evaluation: %s %s' % (scene_scope, task_scope))
                     log.write('mean episode reward: %.2f' %
-                              np.mean(ep_rewards))
+                              np.mean(ep_rewards[ind_succeed_ep]))
                     log.write('mean episode length: %.2f' %
-                              np.mean(ep_lengths))
+                              np.mean(ep_lengths[ind_succeed_ep]))
                     log.write('mean episode collision: %.2f' %
-                              np.mean(ep_collisions))
+                              np.mean(ep_collisions[ind_succeed_ep]))
                     ep_success_percent = (
-                        (ep_success / self.config['num_episode']) * 100)
+                        (len(ind_succeed_ep) / self.config['num_episode']) * 100)
                     log.write('episode success: %.2f%%' %
                               ep_success_percent)
 
-                    ep_spl = np.sum(ep_spl) / self.config['num_episode']
-                    log.write('episode SPL: %.3f' % ep_spl)
+                    ep_spl_mean = np.sum(ep_spl[ind_succeed_ep]) / \
+                        self.config['num_episode']
+                    log.write('episode SPL: %.3f' % ep_spl_mean)
+
+                    # Stat on long path
+                    ind_succeed_far_start = []
+                    ind_far_start = []
+                    for i, short_dist in enumerate(ep_shortest_distance):
+                        if short_dist > 5:
+                            if ep_success[i]:
+                                ind_succeed_far_start.append(i)
+                            ind_far_start.append(i)
+
+                    nb_long_episode = len(ind_far_start)
+                    if nb_long_episode == 0:
+                        nb_long_episode = 1
+                    ep_success_long_percent = (
+                        (len(ind_succeed_far_start) / nb_long_episode) * 100)
+                    log.write('episode > 5 success: %.2f%%' %
+                              ep_success_long_percent)
+                    ep_spl_long_mean = np.sum(ep_spl[ind_succeed_far_start]) / \
+                        nb_long_episode
+                    log.write('episode SPL > 5: %.3f' % ep_spl_long_mean)
+                    log.write('nb episode > 5: %d' % nb_long_episode)
                     log.write('')
-                    scene_stats[scene_scope]["length"].extend(ep_lengths)
-                    scene_stats[scene_scope]["spl"].append(ep_spl)
+
+                    scene_stats[scene_scope]["length"].extend(
+                        ep_lengths[ind_succeed_ep])
+                    scene_stats[scene_scope]["spl"].append(ep_spl_mean)
                     scene_stats[scene_scope]["success"].append(
                         ep_success_percent)
+                    scene_stats[scene_scope]["spl_long"].append(
+                        ep_spl_long_mean)
+                    scene_stats[scene_scope]["success_long"].append(
+                        ep_success_long_percent)
 
                     tmpData = [np.mean(
-                        ep_rewards), np.mean(ep_lengths), np.mean(ep_collisions), ep_success_percent, ep_spl]
+                        ep_rewards), np.mean(ep_lengths), np.mean(ep_collisions), ep_success_percent, ep_spl, ind_succeed_ep]
                     resultData = np.hstack((resultData, tmpData))
 
                     # Show best episode from evaluation
                     # We will print the best (lowest step), median, and worst
                     if show:
                         # Find episode based on episode length
-                        sorted_ep_lengths = np.sort(ep_lengths)
+                        sorted_ep_lengths = np.sort(ep_lengths[ind_succeed_ep])
 
                         # Best is the first episode in the sorted list but we want more than 10 step
                         index_best = 0
@@ -291,17 +332,17 @@ class Evaluation:
                                 index_best = idx
                                 break
                         index_best = np.where(
-                            ep_lengths == sorted_ep_lengths[index_best])
+                            ep_lengths[ind_succeed_ep] == sorted_ep_lengths[index_best])
                         index_best = index_best[0][0]
 
                         # Worst is the last episode in the sorted list
                         index_worst = np.where(
-                            ep_lengths == sorted_ep_lengths[-1])
+                            ep_lengths[ind_succeed_ep] == sorted_ep_lengths[-1])
                         index_worst = index_worst[0][0]
 
                         # Median is half the array size
                         index_median = np.where(
-                            ep_lengths == sorted_ep_lengths[len(sorted_ep_lengths)//2])
+                            ep_lengths[ind_succeed_ep] == sorted_ep_lengths[len(sorted_ep_lengths)//2])
                         # Extract index
                         index_median = index_median[0][0]
 
@@ -324,7 +365,7 @@ class Evaluation:
                             video = cv2.VideoWriter(
                                 video_name, cv2.VideoWriter_fourcc(*"MJPG"), FPS, (width, height))
                             # Retrieve start position
-                            state_id_best = ep_start[idx]
+                            state_id_best = ep_start[ind_succeed_ep][idx]
                             env.reset()
 
                             # Set start position
@@ -366,10 +407,14 @@ class Evaluation:
 
             log.write('\nResults (average trajectory length):')
             for scene_scope in scene_stats:
-                log.write('%s: %.2f steps | %.3f spl | %.2f%% success' %
+                log.write('%s: %.2f steps | %.3f spl | %.2f%% success | %.3f spl > 5 | %.2f%% success > 5' %
                           (scene_scope, np.mean(scene_stats[scene_scope]["length"]), np.mean(
                               scene_stats[scene_scope]["spl"]), np.mean(
-                              scene_stats[scene_scope]["success"])))
+                              scene_stats[scene_scope]["success"]),
+                              np.mean(
+                              scene_stats[scene_scope]["spl_long"]),
+                              np.mean(
+                              scene_stats[scene_scope]["success_long"])))
             # Write data to csv
             writer_csv.writerow(list(resultData))
             break

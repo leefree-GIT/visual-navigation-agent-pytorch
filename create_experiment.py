@@ -10,7 +10,7 @@ TRAIN_SPLIT = (1, 22)
 TEST_SPLIT = (21, 26)
 
 
-KITCHEN_OBJECT_CLASS_LIST = [
+KITCHEN_OBJECT_CLASS_LIST_TRAIN = [
     "Toaster",
     "Microwave",
     "Fridge",
@@ -19,7 +19,7 @@ KITCHEN_OBJECT_CLASS_LIST = [
     "Bowl",
 ]
 
-LIVING_ROOM_OBJECT_CLASS_LIST = [
+LIVING_ROOM_OBJECT_CLASS_LIST_TRAIN = [
     "Pillow",
     "Laptop",
     "Television",
@@ -27,10 +27,10 @@ LIVING_ROOM_OBJECT_CLASS_LIST = [
     "Bowl",
 ]
 
-BEDROOM_OBJECT_CLASS_LIST = ["HousePlant", "Lamp", "Book", "AlarmClock"]
+BEDROOM_OBJECT_CLASS_LIST_TRAIN = ["HousePlant", "Lamp", "Book", "AlarmClock"]
 
 
-BATHROOM_OBJECT_CLASS_LIST = [
+BATHROOM_OBJECT_CLASS_LIST_TRAIN = [
     "Sink", "ToiletPaper", "SoapBottle", "LightSwitch"]
 
 if __name__ == '__main__':
@@ -58,16 +58,23 @@ if __name__ == '__main__':
     args["eval_range"] = str_range
     data = {}
 
-    scene_tasks = [KITCHEN_OBJECT_CLASS_LIST, LIVING_ROOM_OBJECT_CLASS_LIST,
-                   BEDROOM_OBJECT_CLASS_LIST, BATHROOM_OBJECT_CLASS_LIST]
+    scene_tasks = [KITCHEN_OBJECT_CLASS_LIST_TRAIN, LIVING_ROOM_OBJECT_CLASS_LIST_TRAIN,
+                   BEDROOM_OBJECT_CLASS_LIST_TRAIN, BATHROOM_OBJECT_CLASS_LIST_TRAIN]
 
     training = {}
+    set_obj = None
     for idx_scene, scene in enumerate(SCENES):
         for t in range(*args['train_range']):
             name = "FloorPlan" + str(scene + t)
-            f = h5py.File("data/"+name+".h5")
+            f = h5py.File("data/"+name+".h5", 'r')
             # Use h5py object available
             obj_available = json.loads(f.attrs["task_present"])
+            if set_obj is None:
+                set_obj = set(obj_available)
+            else:
+                inter_set = set_obj.intersection(obj_available)
+                set_obj = set(inter_set)
+            break
             obj_available = np.array(obj_available)
             obj_available_mask = [False for i in obj_available]
             obj_available_mask = np.array(obj_available_mask)
@@ -83,13 +90,13 @@ if __name__ == '__main__':
 
             training[name] = [{"object": obj}
                               for obj in obj_available[obj_available_mask == True]]
-
+        print(set_obj)
     evaluation = {}
     for idx_scene, scene in enumerate(SCENES):
         for t in range(*args['eval_range']):
             name = "FloorPlan" + str(scene + t)
             # Use h5py object available
-            f = h5py.File("data/"+name+".h5")
+            f = h5py.File("data/"+name+".h5", 'r')
             obj_available = json.loads(f.attrs["task_present"])
             obj_available = np.array(obj_available)
             obj_available_mask = [False for i in obj_available]
@@ -105,7 +112,7 @@ if __name__ == '__main__':
                             obj_available_mask[obj_idx] = True
             evaluation[name] = [
                 {"object": obj} for obj in obj_available[obj_available_mask == True]]
-
+    exit()
     data["task_list"] = {}
     data["task_list"]["train"] = training
     data["task_list"]["eval"] = evaluation
