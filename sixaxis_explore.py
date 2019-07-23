@@ -64,7 +64,7 @@ def reset_env(name, target):
     return env
 
 
-def display_target(target, wait=False):
+def display_target(target, wait=False, success=None):
     font = cv2.FONT_HERSHEY_SIMPLEX
 
     bottomLeftCornerOfText = (5, 50)
@@ -81,12 +81,28 @@ def display_target(target, wait=False):
                     (0, 0, 255),
                     lineType)
     else:
-        cv2.putText(img, target['object'],
-                    bottomLeftCornerOfText,
-                    font,
-                    fontScale,
-                    fontColor,
-                    lineType)
+        if success != None:
+            if success:
+                cv2.putText(img, "Success",
+                            bottomLeftCornerOfText,
+                            font,
+                            fontScale,
+                            (0, 255, 0),
+                            lineType)
+            else:
+                cv2.putText(img, "Failed",
+                            bottomLeftCornerOfText,
+                            font,
+                            fontScale,
+                            (0, 0, 255),
+                            lineType)
+        else:
+            cv2.putText(img, target['object'],
+                        bottomLeftCornerOfText,
+                        font,
+                        fontScale,
+                        fontColor,
+                        lineType)
 
     # Display the image
     for i in range(10):
@@ -119,7 +135,8 @@ def main():
     print("Using", device.name)
 
     # Set random seed
-    seed = 200
+    random.seed()
+    seed = int(random.randint(0, 200))
 
     # Init random with seed
     random.seed(seed)
@@ -141,22 +158,19 @@ def main():
             tasks.append((scene, target))
 
     # Shuffle tasks
-    # random.shuffle(tasks)
+    random.shuffle(tasks)
 
     # Store episode results
     episodes_param = []
     current_ep_action = []
-    scene_name, current_target = tasks[current_task]
+    scene_name, current_target = "FloorPlan201", {"object": "Television"}
     # Display target
     display_target(current_target, wait=True)
 
-    # Reset env
+    # Training start
+
     env = reset_env(scene_name, current_target)
-    agent_pos = env.locations[env.current_state_id]
-    agent_rot = env.rotations[env.current_state_id]
-    start_pose = {"x": agent_pos[0], "y": agent_pos[1], "z": agent_pos[2],
-                  "rotation": agent_rot[1], "horizon": agent_rot[2]}
-    start_id = env.current_state_id
+    training = True
     display_target(current_target)
     display_obs(env.observation)
     cv2.waitKey(100)
@@ -172,38 +186,63 @@ def main():
             # X is pressed
             if event.code == ecodes.BTN_A:
                 if c.keystate == c.key_down:
-                    # Store current episode
-                    # Get current agent position
-                    agent_pos = env.locations[env.current_state_id]
-                    agent_rot = env.rotations[env.current_state_id]
-                    end_pose = {"x": agent_pos[0], "y": agent_pos[1], "z": agent_pos[2],
-                                "rotation": agent_rot[1], "horizon": agent_rot[2]}
 
-                    # Convert to dataset id
-                    end_id = env.current_state_id
+                    if not training:
+                        # Store current episode
+                        # Get current agent position
+                        agent_pos = env.locations[env.current_state_id]
+                        agent_rot = env.rotations[env.current_state_id]
+                        end_pose = {"x": agent_pos[0], "y": agent_pos[1], "z": agent_pos[2],
+                                    "rotation": agent_rot[1], "horizon": agent_rot[2]}
 
-                    # Check if object is visible
-                    success = check_visibility(env)
-                    episode = {
-                        "actions": current_ep_action,
-                        "scene_name": scene_name,
-                        "target": current_target,
-                        "success": success,
-                        "start_pose": start_pose,
-                        "start_id": start_id,
-                        "end_pose": end_pose,
-                        "end_id": end_id,
-                        "shortest_path": env.shortest_path_terminal(start_id)}
-                    episodes_param.append(episode)
+                        # Convert to dataset id
+                        end_id = env.current_state_id
 
-                    # Start a new task
-                    current_task = current_task + 1
+                        # Check if object is visible
+                        success = check_visibility(env)
+                        episode = {
+                            "actions": current_ep_action,
+                            "scene_name": scene_name,
+                            "target": current_target,
+                            "success": success,
+                            "start_pose": start_pose,
+                            "start_id": start_id,
+                            "end_pose": end_pose,
+                            "end_id": end_id,
+                            "shortest_path": env.shortest_path_terminal(start_id)}
+                        episodes_param.append(episode)
 
-                    # Check if all tasks are done
-                    if current_task == len(tasks):
-                        break
+                        # Start a new task
+                        current_task = current_task + 1
+
+                        # Check if all tasks are done
+                        if current_task == len(tasks):
+                            break
+                        scene_name, current_target = tasks[current_task]
+
+                        display_target(current_target, wait=True)
+                        env = reset_env(scene_name, current_target)
+                        agent_pos = env.locations[env.current_state_id]
+                        agent_rot = env.rotations[env.current_state_id]
+                        start_pose = {"x": agent_pos[0], "y": agent_pos[1], "z": agent_pos[2],
+                                      "rotation": agent_rot[1], "horizon": agent_rot[2]}
+                        start_id = env.current_state_id
+                        display_target(current_target)
+                        display_obs(env.observation)
+
+                        cv2.waitKey(100)
+                    else:
+                        success = check_visibility(env)
+                        env.reset()
+                        display_target(current_target, success=success)
+                        display_obs(env.observation)
+                        cv2.waitKey(100)
+
+            # Start button run the evaluation
+            if event.code == ecodes.BTN_START:
+                if training:
+                    training = False
                     scene_name, current_target = tasks[current_task]
-
                     display_target(current_target, wait=True)
                     env = reset_env(scene_name, current_target)
                     agent_pos = env.locations[env.current_state_id]
@@ -214,10 +253,6 @@ def main():
                     display_target(current_target)
                     display_obs(env.observation)
                     cv2.waitKey(100)
-
-            # Start button
-            if event.code == ecodes.BTN_START:
-                pass
             if event.code == ecodes.BTN_SELECT:
                 break
 
@@ -269,11 +304,13 @@ def main():
             current_ep_action.append(action)
             env.step(env.actions.index(action))
             display_obs(env.observation)
+            display_target(current_target)
             cv2.waitKey(100)
 
     from datetime import datetime
     with open("EXPERIMENTS/SPL_HUMAN/human_agent" + datetime.now().strftime('%b%d_%H-%M-%S') + ".json", "w") as f:
-        f.write(json.dumps(episodes_param, default=default, indent=4))
+        f.write(json.dumps(
+            {"seed": seed, "data": episodes_param}, default=default, indent=4))
 
 
 if __name__ == '__main__':
