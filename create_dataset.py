@@ -1,4 +1,5 @@
 import argparse
+import gc
 import json
 import os
 import re
@@ -18,7 +19,6 @@ from tqdm import tqdm
 import torchvision.models as models
 import torchvision.transforms as transforms
 
-names = []
 scene_type = []
 SCENES = [0, 200, 300, 400]
 TRAIN_SPLIT = (1, 22)
@@ -48,13 +48,19 @@ BATHROOM_OBJECT_CLASS_LIST = [
     "Sink", "ToiletPaper", "SoapBottle", "LightSwitch"]
 SCENE_TASKS = [KITCHEN_OBJECT_CLASS_LIST, LIVING_ROOM_OBJECT_CLASS_LIST,
                BEDROOM_OBJECT_CLASS_LIST, BATHROOM_OBJECT_CLASS_LIST]
-for idx, scene in enumerate(SCENES):
-    for t in range(*TRAIN_SPLIT):
-        names.append("FloorPlan" + str(scene + t))
-        scene_type.append(idx)
-    for t in range(*TEST_SPLIT):
-        names.append("FloorPlan" + str(scene + t))
-        scene_type.append(idx)
+
+
+def construct_scene_names():
+    names = []
+    for idx, scene in enumerate(SCENES):
+        for t in range(*TRAIN_SPLIT):
+            names.append("FloorPlan" + str(scene + t))
+            scene_type.append(idx)
+        for t in range(*TEST_SPLIT):
+            names.append("FloorPlan" + str(scene + t))
+            scene_type.append(idx)
+    return names, scene_type
+
 
 grid_size = 0.5
 
@@ -274,8 +280,11 @@ def create_states(h5_file, resnet_trained, resnet_places, controller, name, args
             it = it + 1
     print(it)
     # Store available objects
-    available_obj = np.ma.masked_array(
-        scene_task, mask=np.logical_not(obj_present)).compressed()
+    available_obj = []
+    for obj in state.metadata['objects']:
+        objectId = obj['objectId']
+        obj_name = objectId.split('|')[0]
+        available_obj.append(obj_name)
     print("Obj available", available_obj)
 
     h5_file.attrs["task_present"] = np.string_(
@@ -289,12 +298,12 @@ def create_states(h5_file, resnet_trained, resnet_places, controller, name, args
     idx = 0
     # Does not redo if already existing
     if args['force'] or \
-        'resnet_feature' not in h5_file.keys() or \
+        ('resnet_feature' not in h5_file.keys() and not args['view']) or \
         'observation' not in h5_file.keys() or \
         'location' not in h5_file.keys() or \
         'rotation' not in h5_file.keys() or \
         'bbox' not in h5_file.keys() or \
-            'semantic_obs' not in h5_file.keys():
+            ('semantic_obs' not in h5_file.keys() and not args['view']):
         for pos in tqdm(reachable_pos, desc="Feature extraction"):
             state = controller.step(dict(action='Teleport', **pos))
             # Normal/Up/Down view
@@ -311,7 +320,7 @@ def create_states(h5_file, resnet_trained, resnet_places, controller, name, args
                     state.metadata['agent']['rotation']['z'] = state.metadata['agent']['cameraHorizon']
                     feature = None
                     feature_place = None
-                    if 'resnet_feature' not in h5_file.keys() or args['force']:
+                    if ('resnet_feature' not in h5_file.keys() or args['force']) and not args['view']:
                         obs_process = resnet50.preprocess_input(state.frame)
                         obs_process = obs_process[np.newaxis, ...]
 
@@ -362,7 +371,7 @@ def create_states(h5_file, resnet_trained, resnet_places, controller, name, args
                     state = controller.step(dict(action="LookUp"))
 
         # Save it to h5 file
-        if args['force'] or 'resnet_feature' not in h5_file.keys():
+        if args['force'] or 'resnet_feature' not in h5_file.keys() and not args['view']:
             if 'resnet_feature' in h5_file.keys():
                 del h5_file['resnet_feature']
             h5_file.create_dataset(
@@ -398,7 +407,7 @@ def create_states(h5_file, resnet_trained, resnet_places, controller, name, args
             h5_file.create_dataset(
                 'object_visibility', data=[s.obj_visible.encode("ascii", "ignore") for s in states])
 
-        if args['force'] or 'semantic_obs' not in h5_file.keys():
+        if args['force'] or 'semantic_obs' not in h5_file.keys() and not args['view']:
             if 'semantic_obs' in h5_file.keys():
                 del h5_file['semantic_obs']
             h5_file.create_dataset(
@@ -589,10 +598,13 @@ def main():
     parser.add_argument('--eval', action='store_true')
     parser.add_argument('--force', action='store_true')
     parser.add_argument('--scene', type=str, default=None)
+    parser.add_argument('--view', action='store_true')
     args = vars(parser.parse_args())
     controller = ai2thor.controller.Controller()
 
     w, h = 400, 300
+    if args['view']:
+        w, h = 800, 600
     controller.start(player_screen_width=w, player_screen_height=h)
 
     # Use resnet from Keras to compute features
@@ -633,6 +645,8 @@ def main():
             scene_type = 2
         elif scene_id > 400 and scene_id < 500:
             scene_type = 3
+    else:
+        names, scene_type = construct_scene_names()
 
     pbar_names = tqdm(names)
 
@@ -641,13 +655,23 @@ def main():
 
         # Eval dataset
         if args['eval']:
-            if not os.path.exists("data_eval/"):
-                os.makedirs("data_eval/")
-            h5_file = h5py.File("data_eval/" + name + '.h5', 'a')
+            if args['view']:
+                if not os.path.exists("data_eval_view/"):
+                    os.makedirs("data_eval_view/")
+                h5_file = h5py.File("data_eval_view/" + name + '.h5', 'a')
+            else:
+                if not os.path.exists("data_eval/"):
+                    os.makedirs("data_eval/")
+                h5_file = h5py.File("data_eval/" + name + '.h5', 'a')
         else:
-            if not os.path.exists("data/"):
-                os.makedirs("data/")
-            h5_file = h5py.File("data/" + name + '.h5', 'a')
+            if args['view']:
+                if not os.path.exists("data_view/"):
+                    os.makedirs("data_view/")
+                h5_file = h5py.File("data_view/" + name + '.h5', 'a')
+            else:
+                if not os.path.exists("data/"):
+                    os.makedirs("data/")
+                h5_file = h5py.File("data/" + name + '.h5', 'a')
 
         write_object_feature(h5_file,
                              object_feature, object_vector)
@@ -667,6 +691,8 @@ def main():
         create_shortest_path(h5_file, states, graph)
 
         h5_file.close()
+
+        gc.collect()
 
 
 if __name__ == '__main__':
