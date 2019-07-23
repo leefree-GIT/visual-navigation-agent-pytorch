@@ -9,6 +9,7 @@ import evdev
 import h5py
 import numpy as np
 from evdev import InputDevice, categorize, ecodes
+from tqdm import tqdm
 
 from agent.environment.ai2thor_file import \
     THORDiscreteEnvironment as THORDiscreteEnvironmentFile
@@ -175,6 +176,8 @@ def main():
     display_obs(env.observation)
     cv2.waitKey(100)
 
+    # Display evaluation progress
+    pbar = tqdm(total=len(tasks))
     for event in device.read_loop():
         # Ignore all event
         # if event.timestamp()-time.time() > 1e-2:
@@ -220,15 +223,20 @@ def main():
                             break
                         scene_name, current_target = tasks[current_task]
 
+                        # Reset var for new episode
                         display_target(current_target, wait=True)
                         env = reset_env(scene_name, current_target)
                         agent_pos = env.locations[env.current_state_id]
                         agent_rot = env.rotations[env.current_state_id]
                         start_pose = {"x": agent_pos[0], "y": agent_pos[1], "z": agent_pos[2],
                                       "rotation": agent_rot[1], "horizon": agent_rot[2]}
+                        current_ep_action = []
                         start_id = env.current_state_id
                         display_target(current_target)
                         display_obs(env.observation)
+
+                        # Update tqdm
+                        pbar.update(1)
 
                         cv2.waitKey(100)
                     else:
