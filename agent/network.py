@@ -49,6 +49,9 @@ class SharedNetwork(nn.Module):
     def __init__(self, method, mask_size=5):
         super(SharedNetwork, self).__init__()
         self.method = method
+        self.gradient = None
+        self.gradient_vanilla = None
+        self.conv_output = None
 
         if self.method == 'word2vec':
             self.word_embedding_size = 300
@@ -60,6 +63,7 @@ class SharedNetwork(nn.Module):
             # Convolution for similarity grid
             pooling_kernel = 2
             self.conv1 = nn.Conv2d(1, 8, 3, stride=1)
+            self.conv1.register_backward_hook(self.hook_backward)
             self.pool = nn.MaxPool2d(pooling_kernel, pooling_kernel)
             self.conv2 = nn.Conv2d(8, 16, 5, stride=1)
 
@@ -125,6 +129,12 @@ class SharedNetwork(nn.Module):
         else:
             raise Exception("Please choose a method")
 
+    def save_gradient(self, grad):
+        self.gradient = grad
+
+    def hook_backward(self, module, grad_input, grad_output):
+        self.gradient_vanilla = grad_input[0]
+
     def forward(self, inp):
         if self.method == 'word2vec':
             # x is the observation
@@ -140,7 +150,11 @@ class SharedNetwork(nn.Module):
             y = self.fc_target(y)
             y = F.relu(y, True)
 
-            z = self.pool(F.relu(self.conv1(z)))
+            z = torch.autograd.Variable(z, requires_grad=True)
+            z = self.conv1(z)
+            z.register_hook(self.save_gradient)
+            self.conv_output = z
+            z = self.pool(F.relu(z))
             z = self.pool(F.relu(self.conv2(z)))
             z = z.view(-1)
 

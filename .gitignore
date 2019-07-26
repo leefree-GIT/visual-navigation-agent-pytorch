@@ -132,3 +132,5 @@ data/*
 !metric_learning.py
 
 !sixaxis_explore.py
+!extract_human_results.py
+!feature_eval.py
