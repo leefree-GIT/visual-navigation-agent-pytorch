@@ -280,11 +280,12 @@ def create_states(h5_file, resnet_trained, resnet_places, controller, name, args
             it = it + 1
     print(it)
     # Store available objects
-    available_obj = []
+    available_obj = set()
     for obj in state.metadata['objects']:
         objectId = obj['objectId']
         obj_name = objectId.split('|')[0]
-        available_obj.append(obj_name)
+        available_obj.add(obj_name)
+    available_obj = list(available_obj)
     print("Obj available", available_obj)
 
     h5_file.attrs["task_present"] = np.string_(
