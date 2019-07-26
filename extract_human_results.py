@@ -17,7 +17,7 @@ class Episode():
         return 1 if self.success else 0
 
     def SPL(self):
-        return self.shortest_path_length / len(self.actions)
+        return self.shortest_path_length / max(self.shortest_path_length, len(self.actions))
 
     def __repr__(self):
         return self.task
@@ -75,7 +75,7 @@ def main():
         targets = []
         for episode in scenes_results[scene]:
             scene_success.append(episode.is_success())
-            scene_spl.append(episode.is_success() * episode.SPL() * 100)
+            scene_spl.append(round(episode.is_success() * episode.SPL() * 100, 2))
             targets.append(episode.task)
 
         scenes_stats[scene] = {"success": scene_success,
@@ -93,8 +93,8 @@ def main():
     print("Summary results:")
     scenetype_stats = dict()
     for scene in sorted(scenes_stats, key=functools.cmp_to_key(comparator)):
-        success_mean = np.mean(scenes_stats[scene]['success'])*100
-        spl_mean = np.mean(scenes_stats[scene]['SPL'])
+        success_mean = round(np.mean(scenes_stats[scene]['success'])*100, 2)
+        spl_mean = round(np.mean(scenes_stats[scene]['SPL']), 2)
         if args['latex']:
             print(scene, '\t&', spl_mean, '\t&', success_mean, '\\\\')
         else:
@@ -109,8 +109,8 @@ def main():
                 'success': [success_mean], 'SPL': [spl_mean]}
     print("Summary per scene type")
     for scene_type in scenetype_stats:
-        success_mean = np.mean(scenetype_stats[scene_type]['success'])
-        spl_mean = np.mean(scenetype_stats[scene_type]['SPL'])
+        success_mean = round(np.mean(scenetype_stats[scene_type]['success']), 2)
+        spl_mean = round(np.mean(scenetype_stats[scene_type]['SPL']), 2)
         if args['latex']:
             print(scene_type, '\t&', spl_mean, '\t&', success_mean, '\\\\')
         else:
