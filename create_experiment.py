@@ -1,8 +1,11 @@
 import argparse
 import json
+import re
 
 import h5py
 import numpy as np
+import spacy
+from scipy import spatial
 
 names = []
 SCENES = [0, 200, 300, 400]
@@ -19,6 +22,13 @@ KITCHEN_OBJECT_CLASS_LIST_TRAIN = [
     "Bowl",
 ]
 
+KITCHEN_OBJECT_CLASS_LIST_EVAL = [
+    "StoveBurner",
+    "Mug",
+    "Pot",
+    "Cup"
+]
+
 LIVING_ROOM_OBJECT_CLASS_LIST_TRAIN = [
     "Pillow",
     "Laptop",
@@ -27,11 +37,50 @@ LIVING_ROOM_OBJECT_CLASS_LIST_TRAIN = [
     "Bowl",
 ]
 
+LIVING_ROOM_OBJECT_CLASS_LIST_EVAL = [
+    "Sofa",
+    "RemoteControl",
+    "Box",
+    "TableTop"
+]
+
 BEDROOM_OBJECT_CLASS_LIST_TRAIN = ["HousePlant", "Lamp", "Book", "AlarmClock"]
+
+BEDROOM_OBJECT_CLASS_LIST_EVAL = ["Mirror", "CD", "CellPhone"]
 
 
 BATHROOM_OBJECT_CLASS_LIST_TRAIN = [
     "Sink", "ToiletPaper", "SoapBottle", "LightSwitch"]
+
+BATHROOM_OBJECT_CLASS_LIST_EVAL = [
+    "Toilet", "Towel", "SprayBottle"]
+
+scene_id_name = ["Kitchen", "LivingRoom", "Bedroom", "Bathroom"]
+
+
+def extract_word_emb_vector(nlp, word_name):
+    # Usee scapy to extract word embedding vector
+    word_vec = nlp(word_name.lower())
+
+    # If words don't exist in dataset
+    # cut them using uppercase letter (SoapBottle -> Soap Bottle)
+    if word_vec.vector_norm == 0:
+        word = re.sub(r"(?<=\w)([A-Z])", r" \1", word_name)
+        word_vec = nlp(word.lower())
+
+        # If no embedding found try to cut word to find embedding (SoapBottle -> [Soap, Bottle])
+        if word_vec.vector_norm == 0:
+            word_split = re.findall('[A-Z][^A-Z]*', word)
+            for word in word_split:
+                word_vec = nlp(word.lower())
+                if word_vec.has_vector:
+                    break
+            if word_vec.vector_norm == 0:
+                print('ERROR: %s not found' % word_name)
+                return None
+    norm_word_vec = word_vec.vector / word_vec.vector_norm  # Normalize vector size
+    return norm_word_vec, word_vec.text
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -45,6 +94,8 @@ if __name__ == '__main__':
                         help='Method to use Ex : word2vec')
     parser.add_argument('--reward', type=str, default="soft_goal",
                         help='Method to use Ex : soft_goal')
+
+    parser.add_argument('--eval_objects', action="store_true")
 
     args = vars(parser.parse_args())
     str_range = list(args["train_range"])
@@ -69,50 +120,107 @@ if __name__ == '__main__':
             f = h5py.File("data/"+name+".h5", 'r')
             # Use h5py object available
             obj_available = json.loads(f.attrs["task_present"])
-            if set_obj is None:
-                set_obj = set(obj_available)
-            else:
-                inter_set = set_obj.intersection(obj_available)
-                set_obj = set(inter_set)
-            break
+
+            obj_available = np.array(list(set.intersection(
+                set(obj_available), set(scene_tasks[idx_scene]))))
             obj_available = np.array(obj_available)
             obj_available_mask = [False for i in obj_available]
             obj_available_mask = np.array(obj_available_mask)
 
-            object_visibility = [json.loads(j) for j in
-                                 f['object_visibility']]
-            for obj_visible in object_visibility:
+            object_visibility_tmp = [json.loads(j) for j in
+                                     f['object_visibility']]
+
+            object_visibility = set()
+            for obj_visible in object_visibility_tmp:
                 for objectId in obj_visible:
                     obj = objectId.split('|')
-                    for obj_idx, curr_obj in enumerate(obj_available):
-                        if obj[0] == curr_obj:
-                            obj_available_mask[obj_idx] = True
+                    object_visibility.add(obj[0])
+            object_visibility = list(object_visibility)
+
+            for obj_visible in object_visibility:
+                for obj_idx, curr_obj in enumerate(obj_available):
+                    if obj_visible == curr_obj:
+                        obj_available_mask[obj_idx] = True
+                        break
 
             training[name] = [{"object": obj}
                               for obj in obj_available[obj_available_mask == True]]
-        print(set_obj)
+
+    if args['eval_objects']:
+        scene_tasks = [KITCHEN_OBJECT_CLASS_LIST_EVAL, LIVING_ROOM_OBJECT_CLASS_LIST_EVAL,
+                       BEDROOM_OBJECT_CLASS_LIST_EVAL, BATHROOM_OBJECT_CLASS_LIST_EVAL]
+
     evaluation = {}
+
+    evaluation_set = dict()
     for idx_scene, scene in enumerate(SCENES):
+        evaluation_set[scene] = list()
         for t in range(*args['eval_range']):
             name = "FloorPlan" + str(scene + t)
             # Use h5py object available
             f = h5py.File("data/"+name+".h5", 'r')
+
+            # Load task present
             obj_available = json.loads(f.attrs["task_present"])
             obj_available = np.array(obj_available)
+
+            # Save available object as set
+            evaluation_set[scene].append(set(obj_available))
+
+            obj_available = np.array(list(set.intersection(
+                set(obj_available), set(scene_tasks[idx_scene]))))
+
             obj_available_mask = [False for i in obj_available]
             obj_available_mask = np.array(obj_available_mask)
 
             object_visibility = [json.loads(j) for j in
                                  f['object_visibility']]
-            for obj_visible in object_visibility:
+            object_visibility_tmp = [json.loads(j) for j in
+                                     f['object_visibility']]
+
+            object_visibility = set()
+            for obj_visible in object_visibility_tmp:
                 for objectId in obj_visible:
                     obj = objectId.split('|')
-                    for obj_idx, curr_obj in enumerate(obj_available):
-                        if obj[0] == curr_obj:
-                            obj_available_mask[obj_idx] = True
+                    object_visibility.add(obj[0])
+            object_visibility = list(object_visibility)
+
+            for obj_visible in object_visibility:
+                for obj_idx, curr_obj in enumerate(obj_available):
+                    if obj_visible == curr_obj:
+                        obj_available_mask[obj_idx] = True
+                        break
+
             evaluation[name] = [
                 {"object": obj} for obj in obj_available[obj_available_mask == True]]
-    exit()
+
+    # # Compute Top 5 similar task
+    # nlp = spacy.load('en_core_web_lg')
+    # for i, (key, eval_set) in enumerate(evaluation_set.items()):
+    #     available_inter = set.intersection(*eval_set)
+    #     print(scene_id_name[i])
+    #     for task in scene_tasks[i]:
+    #         similarity_with_task = list()
+    #         task_available_diff = available_inter - \
+    #             set([task]) - set(scene_tasks[0]) - set(scene_tasks[1]) - \
+    #             set(scene_tasks[2]) - set(scene_tasks[3])
+    #         # Extract we from word
+    #         current_task_we, current_task_name = extract_word_emb_vector(nlp, task)
+    #         for a_i in task_available_diff:
+    #             # Extract we from word
+    #             available_we, available_name = extract_word_emb_vector(nlp, a_i)
+
+    #             # Get similariy between train task and current available object
+    #             similarity = 1 - spatial.distance.cosine(current_task_we, available_we)
+    #             similarity_with_task.append(similarity)
+    #         print(task)
+
+    #         # Print top5
+    #         obj_score, obj_name = zip(*sorted(
+    #             zip(similarity_with_task, task_available_diff), reverse=True))
+    #         for i_top in range(5):
+    #             print("\t", obj_name[i_top], obj_score[i_top])
+
     data["task_list"] = {}
     data["task_list"]["train"] = training
     data["task_list"]["eval"] = evaluation
