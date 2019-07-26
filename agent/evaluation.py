@@ -3,6 +3,7 @@
 import csv
 import imp
 import os
+import random
 import sys
 from itertools import groupby
 
@@ -20,7 +21,7 @@ from agent.environment.ai2thor_file import \
 from agent.gpu_thread import GPUThread
 from agent.network import SceneSpecificNetwork, SharedNetwork
 from agent.training import TrainingSaver
-from agent.utils import find_restore_points
+from agent.utils import find_restore_points, get_first_free_gpu
 from torchvision import transforms
 
 
@@ -63,10 +64,13 @@ class Evaluation:
     def __init__(self, config):
         self.config = config
         self.method = config['method']
+        gpu_id = get_first_free_gpu(2000)
+        self.device = torch.device("cuda:" + str(gpu_id))
         if self.method != "random":
             self.shared_net = SharedNetwork(
-                self.config['method'], self.config.get('mask_size', 5))
-            self.scene_net = SceneSpecificNetwork(self.config['action_size'])
+                self.config['method'], self.config.get('mask_size', 5)).to(self.device)
+            self.scene_net = SceneSpecificNetwork(
+                self.config['action_size']).to(self.device)
 
         self.checkpoints = []
         self.checkpoint_id = 0
@@ -105,6 +109,8 @@ class Evaluation:
         self.checkpoint_id = (self.checkpoint_id + 1) % len(self.checkpoints)
 
     def run(self, show=False):
+        # Init random seed
+        random.seed(200)
         # Create csv writer with correct header
         if self.config['train']:
             writer_csv = prepare_csv(
@@ -202,19 +208,19 @@ class Evaluation:
 
                             if self.method == 'word2vec' or self.method == 'aop' or self.method == 'word2vec_noconv':
                                 x_processed = torch.from_numpy(
-                                    state["current"])
+                                    state["current"]).to(self.device)
                                 goal_processed = torch.from_numpy(
-                                    state["goal"])
+                                    state["goal"]).to(self.device)
                                 object_mask = torch.from_numpy(
-                                    state['object_mask'])
+                                    state['object_mask']).to(self.device)
 
                                 embedding = self.shared_net.forward(
                                     (x_processed, goal_processed, object_mask,))
                             elif self.method == 'target_driven' or self.method == "word2vec_nosimi":
                                 x_processed = torch.from_numpy(
-                                    state["current"])
+                                    state["current"]).to(self.device)
                                 goal_processed = torch.from_numpy(
-                                    state["goal"])
+                                    state["goal"]).to(self.device)
 
                                 embedding = self.shared_net.forward(
                                     (x_processed, goal_processed,))
@@ -222,21 +228,21 @@ class Evaluation:
                                 action = np.random.randint(env.action_size)
                             elif self.method == 'gcn':
                                 x_processed = torch.from_numpy(
-                                    state["current"])
+                                    state["current"]).to(self.device)
                                 goal_processed = torch.from_numpy(
-                                    state["goal"])
-                                obs = state['observation']
+                                    state["goal"]).to(self.device)
+                                obs = state['observation'].to(self.device)
 
                                 embedding = self.shared_net.forward(
                                     (x_processed, goal_processed, obs,))
 
                             if self.method != "random":
                                 (policy, _,) = scene_net.forward(embedding)
-                                embedding = embedding.detach().numpy()
+                                embedding = embedding.cpu().detach().numpy()
 
                                 with torch.no_grad():
                                     action = F.softmax(policy, dim=0).multinomial(
-                                        1).data.numpy()[0]
+                                        1).data.cpu().numpy()[0]
 
                                 if env.current_state_id not in state_ids:
                                     state_ids.append(env.current_state_id)
