@@ -9,8 +9,8 @@ from scipy import spatial
 
 names = []
 SCENES = [0, 200, 300, 400]
-TRAIN_SPLIT = (1, 22)
-TEST_SPLIT = (21, 26)
+TRAIN_SPLIT = (1, 12)
+TEST_SPLIT = (22, 27)
 
 
 KITCHEN_OBJECT_CLASS_LIST_TRAIN = [
@@ -23,7 +23,6 @@ KITCHEN_OBJECT_CLASS_LIST_TRAIN = [
 ]
 
 KITCHEN_OBJECT_CLASS_LIST_EVAL = [
-    "StoveBurner",
     "Mug",
     "Pot",
     "Cup"
@@ -39,7 +38,6 @@ LIVING_ROOM_OBJECT_CLASS_LIST_TRAIN = [
 
 LIVING_ROOM_OBJECT_CLASS_LIST_EVAL = [
     "Sofa",
-    "RemoteControl",
     "Box",
     "TableTop"
 ]
@@ -53,7 +51,7 @@ BATHROOM_OBJECT_CLASS_LIST_TRAIN = [
     "Sink", "ToiletPaper", "SoapBottle", "LightSwitch"]
 
 BATHROOM_OBJECT_CLASS_LIST_EVAL = [
-    "Toilet", "Towel", "SprayBottle"]
+    "Toilet", "Towel"]
 
 scene_id_name = ["Kitchen", "LivingRoom", "Bedroom", "Bathroom"]
 

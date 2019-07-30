@@ -18,6 +18,9 @@ from tqdm import tqdm
 
 import torchvision.models as models
 import torchvision.transforms as transforms
+from pytorchyolo3.darknet import Darknet
+from pytorchyolo3.models.tiny_yolo import TinyYoloNet
+from pytorchyolo3.utils import *
 
 scene_type = []
 SCENES = [0, 200, 300, 400]
@@ -593,6 +596,43 @@ def create_shortest_path(h5_file, states, graph):
         [json.dumps(json_graph.node_link_data(G), cls=NumpyEncoder)], dtype='S'))
 
 
+def extract_yolobbox(h5_file):
+
+    if 'yolo_bbox' not in h5_file.keys():
+        yolo_bbox = []
+        m = Darknet("yolo_dataset/yolov3_ai2thor.cfg")
+        m.load_weights("yolo_dataset/backup/yolov3_ai2thor_best.weights")
+        m.print_network()
+        m.cuda()
+
+        namesfile = "yolo_dataset/obj.names"
+        class_names = load_class_names(namesfile)
+
+        for obs in h5_file['observation']:
+            img = Image.fromarray(obs).convert('RGB')
+            sized = img.resize((m.width, m.height))
+
+            current_bbox = dict()
+            boxes = do_detect(m, sized, 0.5, 0.4, 1)
+            width, height = img.size
+            for box in boxes:
+                x1 = int(round(float((box[0] - box[2]/2.0) * width)))
+                y1 = int(round(float((box[1] - box[3]/2.0) * height)))
+                x2 = int(round(float((box[0] + box[2]/2.0) * width)))
+                y2 = int(round(float((box[1] + box[3]/2.0) * height)))
+
+                cls_conf = box[5]
+                cls_id = box[6]
+
+                obj_name = class_names[cls_id] + '|'
+                current_bbox[obj_name] = [x1, y1, x2, y2]
+            yolo_bbox.append(json.dumps(
+                current_bbox, cls=NumpyEncoder))
+
+        h5_file.create_dataset('yolo_bbox',
+                               data=[y.encode("ascii", "ignore") for y in yolo_bbox])
+
+
 def main():
     argparse.ArgumentParser(description="")
     parser = argparse.ArgumentParser(description='Dataset creation.')
@@ -690,6 +730,9 @@ def main():
 
         # Create shortest path from all state
         create_shortest_path(h5_file, states, graph)
+
+        # Extract yolo bbox
+        extract_yolobbox(h5_file)
 
         h5_file.close()
 
