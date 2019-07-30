@@ -44,6 +44,324 @@ class DQN(nn.Module):
         x = F.relu(self.bn3(self.conv3(x)))
         return self.head(x.view(x.size(0), -1))
 
+# Our method network
+
+
+class word2vec(nn.Module):
+    def __init__(self, method, mask_size=5):
+        super(word2vec, self).__init__()
+        self.word_embedding_size = 300
+        self.fc_target = nn.Linear(
+            self.word_embedding_size, self.word_embedding_size)
+        # Observation layer
+        self.fc_observation = nn.Linear(8192, 512)
+
+        # Convolution for similarity grid
+        pooling_kernel = 2
+        self.conv1 = nn.Conv2d(1, 8, 3, stride=1)
+        # self.conv1.register_backward_hook(self.hook_backward)
+        self.pool = nn.MaxPool2d(pooling_kernel, pooling_kernel)
+        self.conv2 = nn.Conv2d(8, 16, 5, stride=1)
+
+        conv1_output = (mask_size - 3 + 1)//pooling_kernel
+        conv2_output = (conv1_output - 5 + 1)//pooling_kernel
+        self.flat_input = 16 * conv2_output * conv2_output
+
+        # Merge layer
+        self.fc_merge = nn.Linear(
+            512+self.word_embedding_size+self.flat_input, 512)
+
+    def forward(self, inp):
+        # x is the observation
+        # y is the target
+        # z is the object location mask
+        (x, y, z) = inp
+
+        x = x.view(-1)
+        x = self.fc_observation(x)
+        x = F.relu(x, True)
+
+        y = y.view(-1)
+        y = self.fc_target(y)
+        y = F.relu(y, True)
+
+        z = torch.autograd.Variable(z, requires_grad=True)
+        z = self.conv1(z)
+        z.register_hook(self.save_gradient)
+        self.conv_output = z
+        z = self.pool(F.relu(z))
+        z = self.pool(F.relu(self.conv2(z)))
+        z = z.view(-1)
+
+        # xy = torch.stack([x, y], 0).view(-1)
+        xyz = torch.cat([x, y, z])
+        xyz = self.fc_merge(xyz)
+        xyz = F.relu(xyz, True)
+        return xyz
+
+# Our method network without convolution for similarity grid
+
+
+class word2vec_noconv(nn.Module):
+    def __init__(self, method, mask_size=5):
+        super(word2vec_noconv, self).__init__()
+        self.word_embedding_size = 300
+        self.fc_target = nn.Linear(
+            self.word_embedding_size, self.word_embedding_size)
+        # Observation layer
+        self.fc_observation = nn.Linear(8192, 512)
+
+        self.flat_input = mask_size * mask_size
+        self.fc_similarity = nn.Linear(self.flat_input, self.flat_input)
+
+        # Merge layer
+        self.fc_merge = nn.Linear(
+            512+self.word_embedding_size+self.flat_input, 512)
+
+    def forward(self, inp):
+        # x is the observation
+        # y is the target
+        # z is the object location mask
+        (x, y, z) = inp
+
+        x = x.view(-1)
+        x = self.fc_observation(x)
+        x = F.relu(x, True)
+
+        y = y.view(-1)
+        y = self.fc_target(y)
+        y = F.relu(y, True)
+
+        z = z.view(-1)
+        z = self.fc_similarity(z)
+        z = F.relu(z, True)
+
+        # xy = torch.stack([x, y], 0).view(-1)
+        xyz = torch.cat([x, y, z])
+        xyz = self.fc_merge(xyz)
+        xyz = F.relu(xyz, True)
+        return xyz
+
+# Our method network witthout target word embedding
+
+
+class word2vec_notarget(nn.Module):
+    def __init__(self, method, mask_size=5):
+        super(word2vec_notarget, self).__init__()
+        # Observation layer
+        self.fc_observation = nn.Linear(8192, 512)
+
+        # Convolution for similarity grid
+        pooling_kernel = 2
+        self.conv1 = nn.Conv2d(1, 8, 3, stride=1)
+        # self.conv1.register_backward_hook(self.hook_backward)
+        self.pool = nn.MaxPool2d(pooling_kernel, pooling_kernel)
+        self.conv2 = nn.Conv2d(8, 16, 5, stride=1)
+
+        conv1_output = (mask_size - 3 + 1)//pooling_kernel
+        conv2_output = (conv1_output - 5 + 1)//pooling_kernel
+        self.flat_input = 16 * conv2_output * conv2_output
+
+        # Merge layer
+        self.fc_merge = nn.Linear(
+            512+self.flat_input, 512)
+
+    def forward(self, inp):
+        # x is the observation
+        # z is the object location mask
+        (x, z) = inp
+
+        x = x.view(-1)
+        x = self.fc_observation(x)
+        x = F.relu(x, True)
+
+        z = torch.autograd.Variable(z, requires_grad=True)
+        z = self.conv1(z)
+        # z.register_hook(self.save_gradient)
+        self.conv_output = z
+        z = self.pool(F.relu(z))
+        z = self.pool(F.relu(self.conv2(z)))
+        z = z.view(-1)
+
+        # xy = torch.stack([x, y], 0).view(-1)
+        xyz = torch.cat([x, z])
+        xyz = self.fc_merge(xyz)
+        xyz = F.relu(xyz, True)
+        return xyz
+
+# Baseline network
+
+
+class baseline(nn.Module):
+    def __init__(self, method, mask_size=5):
+        super(word2vec_nosimi, self).__init__()
+        self.word_embedding_size = 300
+        self.fc_target = nn.Linear(
+            self.word_embedding_size, self.word_embedding_size)
+        # Observation layer
+        self.fc_observation = nn.Linear(8192, 512)
+        self.fc_merge = nn.Linear(self.word_embedding_size + 512, 512)
+
+    def forward(self, inp):
+        # x is the observation
+            # y is the target
+        (x, y) = inp
+
+        x = x.view(-1)
+        x = self.fc_observation(x)
+        x = F.relu(x, True)
+
+        y = y.view(-1)
+        y = self.fc_target(y)
+        y = F.relu(y, True)
+
+        xy = torch.cat([x, y])
+        xy = self.fc_merge(xy)
+        xy = F.relu(xy, True)
+        return xy
+
+# AOP with image feature
+
+
+class aop(nn.Module):
+    def __init__(self, method, mask_size=5):
+        super(aop, self).__init__()
+        # Target object layer
+        self.fc_target = nn.Linear(2048, 512)
+
+        # Observation layer
+        self.fc_observation = nn.Linear(8192, 512)
+
+        # Merge layer
+        self.fc_merge = nn.Linear(1024+(mask_size*mask_size), 512)
+
+    def forward(self, inp):
+        # x is the observation
+        # y is the target
+        # z is the object location mask
+        (x, y, z) = inp
+
+        x = x.view(-1)
+        x = self.fc_observation(x)
+        x = F.relu(x, True)
+
+        y = y.view(-1)
+        y = self.fc_target(y)
+        y = F.relu(y, True)
+
+        z = z.view(-1)
+
+        xy = torch.stack([x, y], 0).view(-1)
+        xyz = torch.cat([xy, z])
+        xyz = self.fc_merge(xyz)
+        xyz = F.relu(xyz, True)
+        return xyz
+
+# AOP with word embedding
+
+
+class aop_we(nn.Module):
+    def __init__(self, method, mask_size=5):
+        super(aop_we, self).__init__()
+        # Target object layer
+        self.fc_target = nn.Linear(300, 300)
+
+        # Observation layer
+        self.fc_observation = nn.Linear(8192, 512)
+
+        # Merge layer
+        self.fc_merge = nn.Linear(812+(mask_size*mask_size), 512)
+
+    def forward(self, inp):
+        # x is the observation
+            # y is the target
+            # z is the object location mask
+        (x, y, z) = inp
+
+        x = x.view(-1)
+        x = self.fc_observation(x)
+        x = F.relu(x, True)
+
+        y = y.view(-1)
+        y = self.fc_target(y)
+        y = F.relu(y, True)
+
+        z = z.view(-1)
+
+        xyz = torch.cat([x, y, z])
+        xyz = self.fc_merge(xyz)
+        xyz = F.relu(xyz, True)
+        return xyz
+
+# Target driven using visual input as target
+
+
+class target_driven(nn.Module):
+    def __init__(self, method, mask_size=5):
+        super(target_driven, self).__init__()
+        # Siemense layer
+        self.fc_siemense = nn.Linear(8192, 512)
+
+        # Merge layer
+        self.fc_merge = nn.Linear(1024, 512)
+
+    def forward(self, inp):
+        (x, y,) = inp
+
+        x = x.view(-1)
+        x = self.fc_siemense(x)
+        x = F.relu(x, True)
+
+        y = y.view(-1)
+        y = self.fc_siemense(y)
+        y = F.relu(y, True)
+
+        xy = torch.stack([x, y], 0).view(-1)
+        xy = self.fc_merge(xy)
+        xy = F.relu(xy, True)
+        return xy
+
+# GCN implementation
+
+
+class gcn(nn.Module):
+    def __init__(self, method, mask_size=5):
+        super(gcn, self).__init__()
+        self.word_embedding_size = 300
+        self.fc_target = nn.Linear(
+            self.word_embedding_size, self.word_embedding_size)
+        # Observation layer
+        self.fc_observation = nn.Linear(8192, 512)
+
+        # GCN layer
+        self.gcn = GCN()
+
+        # Merge word_embedding(300) + observation(512) + gcn(512)
+        self.fc_merge = nn.Linear(
+            self.word_embedding_size + 512 + 512, 512)
+
+    def forward(self, inp):
+        # x is the observation (resnet feature stacked)
+        # y is the target
+        # z is the observation (RGB frame)
+        (x, y, z) = inp
+
+        x = x.view(-1)
+        x = self.fc_observation(x)
+        x = F.relu(x, True)
+
+        y = y.view(-1)
+        y = self.fc_target(y)
+        y = F.relu(y, True)
+
+        z = self.gcn(z)
+
+        # xy = torch.stack([x, y], 0).view(-1)
+        xyz = torch.cat([x, y, z])
+        xyz = self.fc_merge(xyz)
+        xyz = F.relu(xyz, True)
+        return xyz
+
 
 class SharedNetwork(nn.Module):
     def __init__(self, method, mask_size=5):
@@ -54,78 +372,21 @@ class SharedNetwork(nn.Module):
         self.conv_output = None
 
         if self.method == 'word2vec':
-            self.word_embedding_size = 300
-            self.fc_target = nn.Linear(
-                self.word_embedding_size, self.word_embedding_size)
-            # Observation layer
-            self.fc_observation = nn.Linear(8192, 512)
-
-            # Convolution for similarity grid
-            pooling_kernel = 2
-            self.conv1 = nn.Conv2d(1, 8, 3, stride=1)
-            self.conv1.register_backward_hook(self.hook_backward)
-            self.pool = nn.MaxPool2d(pooling_kernel, pooling_kernel)
-            self.conv2 = nn.Conv2d(8, 16, 5, stride=1)
-
-            conv1_output = (mask_size - 3 + 1)//pooling_kernel
-            conv2_output = (conv1_output - 5 + 1)//pooling_kernel
-            self.flat_input = 16 * conv2_output * conv2_output
-
-            # Merge layer
-            self.fc_merge = nn.Linear(
-                512+self.word_embedding_size+self.flat_input, 512)
-
+            self.net = word2vec(method, mask_size=mask_size)
         elif self.method == 'word2vec_noconv':
-            self.word_embedding_size = 300
-            self.fc_target = nn.Linear(
-                self.word_embedding_size, self.word_embedding_size)
-            # Observation layer
-            self.fc_observation = nn.Linear(8192, 512)
-
-            self.flat_input = mask_size * mask_size
-            self.fc_similarity = nn.Linear(self.flat_input, self.flat_input)
-
-            # Merge layer
-            self.fc_merge = nn.Linear(
-                512+self.word_embedding_size+self.flat_input, 512)
-
+            self.net = word2vec_noconv(method, mask_size=mask_size)
+        elif self.method == 'word2vec_notarget':
+            self.net = word2vec_notarget(method, mask_size=mask_size)
         elif self.method == "word2vec_nosimi":
-            self.word_embedding_size = 300
-            self.fc_target = nn.Linear(
-                self.word_embedding_size, self.word_embedding_size)
-            # Observation layer
-            self.fc_observation = nn.Linear(8192, 512)
-            self.fc_merge = nn.Linear(self.word_embedding_size + 512, 512)
+            self.net = baseline(method, mask_size=mask_size)
         elif self.method == 'aop':
-            # Target object layer
-            self.fc_target = nn.Linear(2048, 512)
-
-            # Observation layer
-            self.fc_observation = nn.Linear(8192, 512)
-
-            # Merge layer
-            self.fc_merge = nn.Linear(1024+(mask_size*mask_size), 512)
+            self.net = aop(method, mask_size=mask_size)
+        elif self.method == 'aop_we':
+            self.net = aop_we(method, mask_size=mask_size)
         elif self.method == 'target_driven':
-            # Siemense layer
-            self.fc_siemense = nn.Linear(8192, 512)
-
-            # Merge layer
-            self.fc_merge = nn.Linear(1024, 512)
-
+            self.net = target_driven(method, mask_size=mask_size)
         elif self.method == 'gcn':
-            self.word_embedding_size = 300
-            self.fc_target = nn.Linear(
-                self.word_embedding_size, self.word_embedding_size)
-            # Observation layer
-            self.fc_observation = nn.Linear(8192, 512)
-
-            # GCN layer
-            self.gcn = GCN()
-
-            # Merge word_embedding(300) + observation(512) + gcn(512)
-            self.fc_merge = nn.Linear(
-                self.word_embedding_size + 512 + 512, 512)
-
+            self.net = gcn(method, mask_size=mask_size)
         else:
             raise Exception("Please choose a method")
 
@@ -136,132 +397,7 @@ class SharedNetwork(nn.Module):
         self.gradient_vanilla = grad_input[0]
 
     def forward(self, inp):
-        if self.method == 'word2vec':
-            # x is the observation
-            # y is the target
-            # z is the object location mask
-            (x, y, z) = inp
-
-            x = x.view(-1)
-            x = self.fc_observation(x)
-            x = F.relu(x, True)
-
-            y = y.view(-1)
-            y = self.fc_target(y)
-            y = F.relu(y, True)
-
-            z = torch.autograd.Variable(z, requires_grad=True)
-            z = self.conv1(z)
-            z.register_hook(self.save_gradient)
-            self.conv_output = z
-            z = self.pool(F.relu(z))
-            z = self.pool(F.relu(self.conv2(z)))
-            z = z.view(-1)
-
-            # xy = torch.stack([x, y], 0).view(-1)
-            xyz = torch.cat([x, y, z])
-            xyz = self.fc_merge(xyz)
-            xyz = F.relu(xyz, True)
-            return xyz
-
-        elif self.method == 'word2vec_noconv':
-            # x is the observation
-            # y is the target
-            # z is the object location mask
-            (x, y, z) = inp
-
-            x = x.view(-1)
-            x = self.fc_observation(x)
-            x = F.relu(x, True)
-
-            y = y.view(-1)
-            y = self.fc_target(y)
-            y = F.relu(y, True)
-
-            z = z.view(-1)
-            z = self.fc_similarity(z)
-            z = F.relu(z, True)
-
-            # xy = torch.stack([x, y], 0).view(-1)
-            xyz = torch.cat([x, y, z])
-            xyz = self.fc_merge(xyz)
-            xyz = F.relu(xyz, True)
-            return xyz
-
-        elif self.method == 'word2vec_nosimi':
-            # x is the observation
-            # y is the target
-            (x, y) = inp
-
-            x = x.view(-1)
-            x = self.fc_observation(x)
-            x = F.relu(x, True)
-
-            y = y.view(-1)
-            y = self.fc_target(y)
-            y = F.relu(y, True)
-
-            xy = torch.cat([x, y])
-            xy = self.fc_merge(xy)
-            xy = F.relu(xy, True)
-            return xy
-        elif self.method == 'aop':
-            # x is the observation
-            # y is the target
-            # z is the object location mask
-            (x, y, z) = inp
-
-            x = x.view(-1)
-            x = self.fc_observation(x)
-            x = F.relu(x, True)
-
-            y = y.view(-1)
-            y = self.fc_target(y)
-            y = F.relu(y, True)
-
-            z = z.view(-1)
-
-            xy = torch.stack([x, y], 0).view(-1)
-            xyz = torch.cat([xy, z])
-            xyz = self.fc_merge(xyz)
-            xyz = F.relu(xyz, True)
-            return xyz
-        elif self.method == 'target_driven':
-            (x, y,) = inp
-
-            x = x.view(-1)
-            x = self.fc_siemense(x)
-            x = F.relu(x, True)
-
-            y = y.view(-1)
-            y = self.fc_siemense(y)
-            y = F.relu(y, True)
-
-            xy = torch.stack([x, y], 0).view(-1)
-            xy = self.fc_merge(xy)
-            xy = F.relu(xy, True)
-            return xy
-        elif self.method == 'gcn':
-            # x is the observation (resnet feature stacked)
-            # y is the target
-            # z is the observation (RGB frame)
-            (x, y, z) = inp
-
-            x = x.view(-1)
-            x = self.fc_observation(x)
-            x = F.relu(x, True)
-
-            y = y.view(-1)
-            y = self.fc_target(y)
-            y = F.relu(y, True)
-
-            z = self.gcn(z)
-
-            # xy = torch.stack([x, y], 0).view(-1)
-            xyz = torch.cat([x, y, z])
-            xyz = self.fc_merge(xyz)
-            xyz = F.relu(xyz, True)
-            return xyz
+        return self.net(inp)
 
 
 class SceneSpecificNetwork(nn.Module):

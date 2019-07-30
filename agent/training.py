@@ -68,8 +68,11 @@ class TrainingSaver:
             self.config = state['config']
             for k, v in conf.items():
                 self.config[k] = v
-
-        self.shared_network.load_state_dict(state['navigation'])
+        from collections import OrderedDict
+        new_state_dict = OrderedDict()
+        for key, value in state['navigation'].items():
+            new_state_dict['net.'+key] = value
+        self.shared_network.load_state_dict(new_state_dict)
 
         self.scene_network.load_state_dict(
             state[f'navigation/scene'])

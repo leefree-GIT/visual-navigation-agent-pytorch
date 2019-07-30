@@ -15,10 +15,15 @@ import torch.multiprocessing as mp
 import torch.nn.functional as F
 from PIL import Image
 from tensorboardX import SummaryWriter
+from torch.nn import Sequential
 
 from agent.environment.ai2thor_file import \
     THORDiscreteEnvironment as THORDiscreteEnvironmentFile
 from agent.gpu_thread import GPUThread
+from agent.method.aop import AOP
+from agent.method.gcn import GCN
+from agent.method.similarity_grid import SimilarityGrid
+from agent.method.target_driven import TargetDriven
 from agent.network import SceneSpecificNetwork, SharedNetwork
 from agent.training import TrainingSaver
 from agent.utils import find_restore_points, get_first_free_gpu
@@ -94,8 +99,8 @@ class Evaluation:
             except Exception as e:
                 print("Error loading", e)
                 exit()
-            evaluation.saver = TrainingSaver(evaluation.shared_net,
-                                             evaluation.scene_net, None, evaluation.config)
+        evaluation.saver = TrainingSaver(evaluation.shared_net,
+                                         evaluation.scene_net, None, evaluation.config)
         evaluation.chk_numbers = chk_numbers
         evaluation.checkpoints = checkpoints
         return evaluation
@@ -109,6 +114,16 @@ class Evaluation:
         self.checkpoint_id = (self.checkpoint_id + 1) % len(self.checkpoints)
 
     def run(self, show=False):
+        self.method_class = None
+        if self.method == 'word2vec' or self.method == 'word2vec_noconv' or self.method == 'word2vec_notarget' or self.method == 'word2vec_nosimi':
+            self.method_class = SimilarityGrid(self.method)
+        elif self.method == 'aop' or self.method == 'aop_we':
+            self.method_class = AOP(self.method)
+        elif self.method == 'target_driven':
+            self.method_class = TargetDriven(self.method)
+        elif self.method == 'gcn':
+            self.method_class = GCN(self.method)
+
         # Init random seed
         random.seed(200)
         # Create csv writer with correct header
@@ -135,6 +150,9 @@ class Evaluation:
                 if self.method != "random":
                     scene_net = self.scene_net
                     scene_net.eval()
+
+                network = Sequential(self.shared_net, scene_net)
+                network.eval()
                 scene_stats[scene_scope] = dict()
                 scene_stats[scene_scope]["length"] = list()
                 scene_stats[scene_scope]["spl"] = list()
@@ -173,87 +191,24 @@ class Evaluation:
                         actions = []
                         ep_start.append(env.current_state_id)
                         while not terminal:
-                            if self.method == 'word2vec' or self.method == 'word2vec_noconv':
-                                state = {
-                                    "current": env.render('resnet_features'),
-                                    "goal": env.render_target('word_features'),
-                                    "object_mask": env.render_mask_similarity()
-                                }
-                            elif self.method == 'word2vec_nosimi':
-                                state = {
-                                    "current": env.render('resnet_features'),
-                                    "goal": env.render_target('word_features')
-                                }
-                            elif self.method == 'aop':
-                                state = {
-                                    "current": env.render('resnet_features'),
-                                    "goal": env.render_target('word_features'),
-                                    "object_mask": env.render_mask()
-                                }
-                            elif self.method == 'target_driven':
-                                state = {
-                                    "current": env.render('resnet_features'),
-                                    "goal": env.render_target('resnet_features'),
-                                }
-                            elif self.method == 'gcn':
-                                normalize = transforms.Compose([
-                                    transforms.ToTensor(),
-                                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[
-                                        0.229, 0.224, 0.225])])
-                                state = {
-                                    "current": env.render('resnet_features'),
-                                    "goal": env.render_target('word_features'),
-                                    "observation": normalize(env.observation).unsqueeze(0),
-                                }
-
-                            if self.method == 'word2vec' or self.method == 'aop' or self.method == 'word2vec_noconv':
-                                x_processed = torch.from_numpy(
-                                    state["current"]).to(self.device)
-                                goal_processed = torch.from_numpy(
-                                    state["goal"]).to(self.device)
-                                object_mask = torch.from_numpy(
-                                    state['object_mask']).to(self.device)
-
-                                embedding = self.shared_net.forward(
-                                    (x_processed, goal_processed, object_mask,))
-                            elif self.method == 'target_driven' or self.method == "word2vec_nosimi":
-                                x_processed = torch.from_numpy(
-                                    state["current"]).to(self.device)
-                                goal_processed = torch.from_numpy(
-                                    state["goal"]).to(self.device)
-
-                                embedding = self.shared_net.forward(
-                                    (x_processed, goal_processed,))
-                            elif self.method == "random":
-                                action = np.random.randint(env.action_size)
-                            elif self.method == 'gcn':
-                                x_processed = torch.from_numpy(
-                                    state["current"]).to(self.device)
-                                goal_processed = torch.from_numpy(
-                                    state["goal"]).to(self.device)
-                                obs = state['observation'].to(self.device)
-
-                                embedding = self.shared_net.forward(
-                                    (x_processed, goal_processed, obs,))
-
                             if self.method != "random":
-                                (policy, _,) = scene_net.forward(embedding)
-                                embedding = embedding.cpu().detach().numpy()
-
+                                policy, value, state = self.method_class.forward_policy(
+                                    env, self.device, network)
                                 with torch.no_grad():
                                     action = F.softmax(policy, dim=0).multinomial(
                                         1).data.cpu().numpy()[0]
 
                                 if env.current_state_id not in state_ids:
                                     state_ids.append(env.current_state_id)
-                                    embedding_vectors.append(embedding)
+                            else:
+                                action = np.random.randint(env.action_size)
 
                             env.step(action)
                             actions.append(action)
                             ep_reward += env.reward
                             terminal = env.terminal
 
-                            if ep_t == 500:
+                            if ep_t == 300:
                                 break
                             if env.collided:
                                 ep_collision += 1
@@ -305,8 +260,7 @@ class Evaluation:
                     log.write('episode success: %.2f%%' %
                               ep_success_percent)
 
-                    ep_spl_mean = np.sum(ep_spl[ind_succeed_ep]) / \
-                        self.config['num_episode']
+                    ep_spl_mean = np.sum(ep_spl[ind_succeed_ep]) / self.config['num_episode']
                     log.write('episode SPL: %.3f' % ep_spl_mean)
 
                     # Stat on long path
@@ -325,8 +279,7 @@ class Evaluation:
                         (len(ind_succeed_far_start) / nb_long_episode) * 100)
                     log.write('episode > 5 success: %.2f%%' %
                               ep_success_long_percent)
-                    ep_spl_long_mean = np.sum(ep_spl[ind_succeed_far_start]) / \
-                        nb_long_episode
+                    ep_spl_long_mean = np.sum(ep_spl[ind_succeed_far_start]) / nb_long_episode
                     log.write('episode SPL > 5: %.3f' % ep_spl_long_mean)
                     log.write('nb episode > 5: %d' % nb_long_episode)
                     log.write('')
@@ -406,7 +359,7 @@ class Evaluation:
                             for i in range(10):
                                 video.write(img)
                             video.release()
-                    if self.method != "random" and self.method != "gcn":
+                    if False and self.method != "random" and self.method != "gcn":
                         # Use tensorboard to plot embeddings
                         if self.config['train']:
                             embedding_writer = SummaryWriter(

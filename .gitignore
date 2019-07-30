@@ -134,3 +134,4 @@ data/*
 !sixaxis_explore.py
 !extract_human_results.py
 !feature_eval.py
+!pytorchyolo3

@@ -15,6 +15,10 @@ import torch.nn.functional as F
 
 from agent.environment.ai2thor_file import \
     THORDiscreteEnvironment as THORDiscreteEnvironmentFile
+from agent.method.aop import AOP
+from agent.method.gcn import GCN
+from agent.method.similarity_grid import SimilarityGrid
+from agent.method.target_driven import TargetDriven
 from agent.network import ActorCriticLoss, SceneSpecificNetwork, SharedNetwork
 from torchvision import transforms
 
@@ -144,6 +148,16 @@ class TrainingThread(mp.Process):
         for scene in self.scenes:
             self._sync_network(scene)
 
+        self.method_class = None
+        if self.method == 'word2vec' or self.method == 'word2vec_noconv' or self.method == 'word2vec_notarget' or self.method == 'word2vec_nosimi':
+            self.method_class = SimilarityGrid(self.method)
+        elif self.method == 'aop' or self.method == 'aop_we':
+            self.method_class = AOP(self.method)
+        elif self.method == 'target_driven':
+            self.method_class = TargetDriven(self.method)
+        elif self.method == 'gcn':
+            self.method_class = GCN(self.method)
+
     def _reset_episode(self, idx):
         self.saved_actions = []
         self.episode_reward = 0
@@ -162,71 +176,8 @@ class TrainingThread(mp.Process):
         # Plays out one game to end or max_t
         for t in range(self.max_t):
 
-            # Resnet feature are extracted or computed here
-            if self.method == 'word2vec' or self.method == 'word2vec_noconv':
-                state = {
-                    "current": self.envs[idx].render('resnet_features'),
-                    "goal": self.envs[idx].render_target('word_features'),
-                    "object_mask": self.envs[idx].render_mask_similarity()
-                }
-            elif self.method == 'word2vec_nosimi':
-                state = {
-                    "current": self.envs[idx].render('resnet_features'),
-                    "goal": self.envs[idx].render_target('word_features')
-                }
-            elif self.method == 'aop':
-                state = {
-                    "current": self.envs[idx].render('resnet_features'),
-                    "goal": self.envs[idx].render_target('word_features'),
-                    "object_mask": self.envs[idx].render_mask()
-                }
-            elif self.method == 'target_driven':
-                state = {
-                    "current": self.envs[idx].render('resnet_features'),
-                    "goal": self.envs[idx].render_target('resnet_features'),
-                }
-            elif self.method == 'gcn':
-                normalize = transforms.Compose([
-                    transforms.ToTensor(),
-                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[
-                                         0.229, 0.224, 0.225])])
-                state = {
-                    "current": self.envs[idx].render('resnet_features'),
-                    "goal": self.envs[idx].render_target('word_features'),
-                    "observation": normalize(self.envs[idx].observation).unsqueeze(0),
-                }
-
-            if self.method == 'word2vec' or self.method == 'aop' or self.method == 'word2vec_noconv':
-                x_processed = torch.from_numpy(state["current"])
-                goal_processed = torch.from_numpy(state["goal"])
-                object_mask = torch.from_numpy(state['object_mask'])
-
-                x_processed = x_processed.to(self.device)
-                goal_processed = goal_processed.to(self.device)
-                object_mask = object_mask.to(self.device)
-
-                (policy, value) = self.policy_networks(
-                    (x_processed, goal_processed, object_mask,))
-            elif self.method == 'target_driven' or self.method == 'word2vec_nosimi':
-                x_processed = torch.from_numpy(state["current"])
-                goal_processed = torch.from_numpy(state["goal"])
-
-                x_processed = x_processed.to(self.device)
-                goal_processed = goal_processed.to(self.device)
-
-                (policy, value) = self.policy_networks(
-                    (x_processed, goal_processed,))
-            elif self.method == 'gcn':
-                x_processed = torch.from_numpy(state["current"])
-                goal_processed = torch.from_numpy(state["goal"])
-                obs = state['observation']
-
-                x_processed = x_processed.to(self.device)
-                goal_processed = goal_processed.to(self.device)
-                obs = obs.to(self.device)
-
-                (policy, value) = self.policy_networks(
-                    (x_processed, goal_processed, obs,))
+            policy, value, state = self.method_class.forward_policy(
+                self.envs[idx], self.device, self.policy_networks)
 
             if (self.id == 0) and (self.local_t % 100) == 0:
                 print(f'Local Step {self.local_t}')
@@ -321,71 +272,8 @@ class TrainingThread(mp.Process):
         if terminal_end:
             return 0.0, results, rollout_path, terminal_end
         else:
-            if self.method == 'word2vec' or self.method == 'word2vec_noconv':
-                state = {
-                    "current": self.envs[idx].render('resnet_features'),
-                    "goal": self.envs[idx].render_target('word_features'),
-                    "object_mask": self.envs[idx].render_mask_similarity()
-                }
-            elif self.method == 'aop':
-                state = {
-                    "current": self.envs[idx].render('resnet_features'),
-                    "goal": self.envs[idx].render_target('word_features'),
-                    "object_mask": self.envs[idx].render_mask()
-                }
-            elif self.method == 'target_driven':
-                state = {
-                    "current": self.envs[idx].render('resnet_features'),
-                    "goal": self.envs[idx].render_target('resnet_features'),
-                }
-            elif self.method == 'word2vec_nosimi':
-                state = {
-                    "current": self.envs[idx].render('resnet_features'),
-                    "goal": self.envs[idx].render_target('word_features')
-                }
-            elif self.method == 'gcn':
-                normalize = transforms.Compose([
-                    transforms.ToTensor(),
-                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[
-                                         0.229, 0.224, 0.225])])
-                state = {
-                    "current": self.envs[idx].render('resnet_features'),
-                    "goal": self.envs[idx].render_target('word_features'),
-                    "observation": normalize(self.envs[idx].observation).unsqueeze(0),
-                }
-
-            if self.method == 'word2vec' or self.method == 'aop' or self.method == 'word2vec_noconv':
-                x_processed = torch.from_numpy(state["current"])
-                goal_processed = torch.from_numpy(state["goal"])
-                object_mask = torch.from_numpy(state['object_mask'])
-
-                x_processed = x_processed.to(self.device)
-                goal_processed = goal_processed.to(self.device)
-                object_mask = object_mask.to(self.device)
-
-                (policy, value) = self.policy_networks(
-                    (x_processed, goal_processed, object_mask,))
-            elif self.method == 'target_driven' or self.method == 'word2vec_nosimi':
-                x_processed = torch.from_numpy(state["current"])
-                goal_processed = torch.from_numpy(state["goal"])
-
-                x_processed = x_processed.to(self.device)
-                goal_processed = goal_processed.to(self.device)
-
-                (policy, value) = self.policy_networks(
-                    (x_processed, goal_processed,))
-
-            elif self.method == 'gcn':
-                x_processed = torch.from_numpy(state["current"])
-                goal_processed = torch.from_numpy(state["goal"])
-                obs = state['observation']
-
-                x_processed = x_processed.to(self.device)
-                goal_processed = goal_processed.to(self.device)
-                obs = obs.to(self.device)
-
-                (policy, value) = self.policy_networks(
-                    (x_processed, goal_processed, obs,))
+            policy, value, state = self.method_class.forward_policy(
+                self.envs[idx], self.device, self.policy_networks)
             return value.data.item(), results, rollout_path, terminal_end
 
     def _optimize_path(self, scene, playout_reward: float, results, rollout_path):

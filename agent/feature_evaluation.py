@@ -118,7 +118,7 @@ class FeatureEvaluation:
                                     "current": env.render('resnet_features'),
                                     "goal": env.render_target('word_features')
                                 }
-                            elif self.method == 'aop':
+                            elif self.method == 'aop' or self.method == 'aop_we':
                                 state = {
                                     "current": env.render('resnet_features'),
                                     "goal": env.render_target('word_features'),
@@ -140,7 +140,7 @@ class FeatureEvaluation:
                                     "observation": normalize(env.observation).unsqueeze(0),
                                 }
 
-                            if self.method == 'word2vec' or self.method == 'aop' or self.method == 'word2vec_noconv':
+                            if self.method == 'word2vec' or self.method == 'aop' or self.method == 'aop_we' or self.method == 'word2vec_noconv':
                                 x_processed = torch.from_numpy(
                                     state["current"]).to(self.device)
                                 goal_processed = torch.from_numpy(
