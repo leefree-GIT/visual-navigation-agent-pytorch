@@ -4,7 +4,7 @@ from .abs_method import AbstractMethod
 
 
 class TargetDriven(AbstractMethod):
-    def forward_policy(self, env, device, policy_networks):
+    def extract_input(self, env, device):
         state = {
             "current": env.render('resnet_features'),
             "goal": env.render_target('resnet_features'),
@@ -15,6 +15,11 @@ class TargetDriven(AbstractMethod):
 
         x_processed = x_processed.to(device)
         goal_processed = goal_processed.to(device)
+
+        return state, x_processed, goal_processed
+
+    def forward_policy(self, env, device, policy_networks):
+        state, x_processed, goal_processed = self.extract_input(env, device)
 
         (policy, value) = policy_networks(
             (x_processed, goal_processed,))

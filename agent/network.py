@@ -44,10 +44,11 @@ class DQN(nn.Module):
         x = F.relu(self.bn3(self.conv3(x)))
         return self.head(x.view(x.size(0), -1))
 
-# Our method network
-
 
 class word2vec(nn.Module):
+    """word2vec network (Our method)
+    """
+
     def __init__(self, method, mask_size=5):
         super(word2vec, self).__init__()
         self.word_embedding_size = 300
@@ -99,10 +100,11 @@ class word2vec(nn.Module):
         xyz = F.relu(xyz, True)
         return xyz
 
-# Our method network without convolution for similarity grid
-
 
 class word2vec_noconv(nn.Module):
+    """Our method network without convolution for similarity grid
+    """
+
     def __init__(self, method, mask_size=5):
         super(word2vec_noconv, self).__init__()
         self.word_embedding_size = 300
@@ -142,10 +144,11 @@ class word2vec_noconv(nn.Module):
         xyz = F.relu(xyz, True)
         return xyz
 
-# Our method network witthout target word embedding
-
 
 class word2vec_notarget(nn.Module):
+    """Our method network without target word embedding
+    """
+
     def __init__(self, method, mask_size=5):
         super(word2vec_notarget, self).__init__()
         # Observation layer
@@ -189,12 +192,13 @@ class word2vec_notarget(nn.Module):
         xyz = F.relu(xyz, True)
         return xyz
 
-# Baseline network
-
 
 class baseline(nn.Module):
+    """Baseline network
+    """
+
     def __init__(self, method, mask_size=5):
-        super(word2vec_nosimi, self).__init__()
+        super(baseline, self).__init__()
         self.word_embedding_size = 300
         self.fc_target = nn.Linear(
             self.word_embedding_size, self.word_embedding_size)
@@ -220,10 +224,11 @@ class baseline(nn.Module):
         xy = F.relu(xy, True)
         return xy
 
-# AOP with image feature
-
 
 class aop(nn.Module):
+    """AOP with image feature as target
+    """
+
     def __init__(self, method, mask_size=5):
         super(aop, self).__init__()
         # Target object layer
@@ -257,10 +262,11 @@ class aop(nn.Module):
         xyz = F.relu(xyz, True)
         return xyz
 
-# AOP with word embedding
-
 
 class aop_we(nn.Module):
+    """AOP with word embedding as target
+    """
+
     def __init__(self, method, mask_size=5):
         super(aop_we, self).__init__()
         # Target object layer
@@ -293,10 +299,11 @@ class aop_we(nn.Module):
         xyz = F.relu(xyz, True)
         return xyz
 
-# Target driven using visual input as target
-
 
 class target_driven(nn.Module):
+    """Target driven using visual input as target
+    """
+
     def __init__(self, method, mask_size=5):
         super(target_driven, self).__init__()
         # Siemense layer
@@ -321,10 +328,11 @@ class target_driven(nn.Module):
         xy = F.relu(xy, True)
         return xy
 
-# GCN implementation
-
 
 class gcn(nn.Module):
+    """GCN implementation
+    """
+
     def __init__(self, method, mask_size=5):
         super(gcn, self).__init__()
         self.word_embedding_size = 300
@@ -364,6 +372,9 @@ class gcn(nn.Module):
 
 
 class SharedNetwork(nn.Module):
+    """ Bottom network, will extract feature for the policy network
+    """
+
     def __init__(self, method, mask_size=5):
         super(SharedNetwork, self).__init__()
         self.method = method
@@ -377,6 +388,8 @@ class SharedNetwork(nn.Module):
             self.net = word2vec_noconv(method, mask_size=mask_size)
         elif self.method == 'word2vec_notarget':
             self.net = word2vec_notarget(method, mask_size=mask_size)
+
+        # word2vec_nosimi is the baseline
         elif self.method == "word2vec_nosimi":
             self.net = baseline(method, mask_size=mask_size)
         elif self.method == 'aop':

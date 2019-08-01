@@ -2,12 +2,11 @@ import torch
 
 from torchvision import transforms
 
-from torchvision import transforms
 from .abs_method import AbstractMethod
 
 
 class GCN(AbstractMethod):
-    def forward_policy(self, env, device, policy_networks):
+    def extract_input(self, env, device):
         normalize = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[
@@ -22,11 +21,17 @@ class GCN(AbstractMethod):
         goal_processed = torch.from_numpy(state["goal"])
         obs = state['observation']
 
-        x_processed = x_processed.to(self.device)
-        goal_processed = goal_processed.to(self.device)
-        obs = obs.to(self.device)
+        x_processed = x_processed.to(device)
+        goal_processed = goal_processed.to(device)
+        obs = obs.to(device)
 
-        (policy, value) = self.policy_networks(
+        return state, x_processed, goal_processed, obs
+
+    def forward_policy(self, env, device, policy_networks):
+
+        state, x_processed, goal_processed, obs = self.extract_input(env, device)
+
+        (policy, value) = policy_networks(
             (x_processed, goal_processed, obs,))
 
         return policy, value, state

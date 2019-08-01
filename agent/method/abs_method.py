@@ -10,3 +10,7 @@ class AbstractMethod(ABC):
     @abstractmethod
     def forward_policy(self, env, device, policy_networks):
         pass
+
+    @abstractmethod
+    def extract_input(self, env, device):
+        pass
