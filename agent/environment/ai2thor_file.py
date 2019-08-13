@@ -22,6 +22,8 @@ class THORDiscreteEnvironment(Environment):
                  history_length: int = 4,
                  terminal_state=0,
                  h5_file_path=None,
+                 bbox_method=None,
+                 we_method=None,
                  action_size: int = 4,
                  mask_size: int = 5,
                  **kwargs):
@@ -78,8 +80,16 @@ class THORDiscreteEnvironment(Environment):
         # Load object resnet feature
         object_feature = self.h5_file['object_feature']
 
+        # Save word embedding method (None is spacy en_core_web_lg, visualgenome is we trained on visual genome)
+        self.we_method = we_method
+
         # Load object word embedding feature
-        self.object_vector = self.h5_file['object_vector']
+        if self.we_method is None:
+            print("Spacy")
+            self.object_vector = self.h5_file['object_vector']
+        else:
+            print("Visual genome")
+            self.object_vector = self.h5_file['object_vector_visualgenome']
 
         # Load shortest path distance between state
         self.shortest_path_distance = self.h5_file['shortest_path_distance']
@@ -87,6 +97,9 @@ class THORDiscreteEnvironment(Environment):
         # Load object visibility
         self.object_visibility = [json.loads(j) for j in
                                   self.h5_file['object_visibility']]
+
+        # Save bbox method (None is groundtruth, yolo is yolo bbox)
+        self.bbox_method = bbox_method
 
         self.bbox_area = 0
         self.max_bbox_area = 0
@@ -271,7 +284,10 @@ class THORDiscreteEnvironment(Environment):
 
     @property
     def boudingbox(self):
-        return json.loads(self.h5_file['bbox'][self.current_state_id])
+        if self.bbox_method is None:
+            return json.loads(self.h5_file['bbox'][self.current_state_id])
+        elif self.bbox_method == 'yolo':
+            return json.loads(self.h5_file['yolo_bbox'][self.current_state_id])
 
     def render(self, mode):
         assert mode == 'resnet_features'

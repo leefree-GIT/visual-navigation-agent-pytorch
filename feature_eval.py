@@ -19,7 +19,7 @@ if __name__ == '__main__':
                         help='Experiment parameters.json file', required=True)
 
     args = vars(parser.parse_args())
-    args = populate_config(args, mode='train')
+    args = populate_config(args, mode='eval')
 
     if args.get('method', None) is None:
         print('ERROR Please choose a method in json file')
@@ -32,7 +32,7 @@ if __name__ == '__main__':
 
         exit()
     else:
-        if args['method'] != 'word2vec':
+        if not args['method'].startswith('word2vec'):
             print(args['method'], "method cannot be used")
             print("Only word2vec")
             exit()

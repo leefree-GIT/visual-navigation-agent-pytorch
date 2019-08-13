@@ -484,7 +484,7 @@ def create_graph(h5_file, states, controller, args):
         return h5_file['graph']
 
 
-def write_object_feature(h5_file, object_feature, object_vector):
+def write_object_feature(h5_file, object_feature, object_vector, object_vector_visualgenome):
     # Write object_feature (resnet features)
     if 'object_feature' in h5_file.keys():
         del h5_file['object_feature']
@@ -496,6 +496,11 @@ def write_object_feature(h5_file, object_feature, object_vector):
         del h5_file['object_vector']
     h5_file.create_dataset(
         'object_vector', data=object_vector)
+    # Write object_vector (word embedding features)
+    if 'object_vector_visualgenome' in h5_file.keys():
+        del h5_file['object_vector_visualgenome']
+    h5_file.create_dataset(
+        'object_vector_visualgenome', data=object_vector_visualgenome)
 
     h5_file.attrs["object_ids"] = np.string_(json.dumps(OBJECT_IDS))
 
@@ -527,6 +532,7 @@ def extract_word_emb_vector(nlp, word_name):
 def extract_object_feature(resnet_trained, h, w):
     # Use scapy to extract vector from word embeddings
     nlp = spacy.load('en_core_web_lg')  # Use en_core_web_lg for more words
+    nlp_visual = spacy.load('./word2vec_visualgenome/visualgenome_spacy')
 
     # Use glob to list object image
     import glob
@@ -535,6 +541,7 @@ def extract_object_feature(resnet_trained, h, w):
     object_feature = np.zeros((len(OBJECT_IDS), 2048), dtype=np.float32)
     # 300 is the word embeddings feature size
     object_vector = np.zeros((len(OBJECT_IDS), 300), dtype=np.float32)
+    object_vector_visualgenome = np.zeros((len(OBJECT_IDS), 300), dtype=np.float32)
     # List all jpg files in data/objects/
     for filepath in glob.glob('data/objects/*.jpg'):
 
@@ -554,10 +561,15 @@ def extract_object_feature(resnet_trained, h, w):
     for object_name, object_id in OBJECT_IDS.items():
         norm_word_vec = extract_word_emb_vector(nlp, object_name)
         if norm_word_vec is None:
-            print(object_name)
+            print("Spacy no we for", object_name)
         object_vector[object_id] = norm_word_vec
 
-    return object_feature, object_vector
+        norm_word_vec_vg = extract_word_emb_vector(nlp_visual, object_name)
+        if norm_word_vec_vg is None:
+            print("Visual genome no we for", object_name)
+        object_vector_visualgenome[object_id] = norm_word_vec_vg
+
+    return object_feature, object_vector, object_vector_visualgenome
 
 
 def create_shortest_path(h5_file, states, graph):
@@ -669,7 +681,7 @@ def main():
     resnet_places.eval()
     resnet_places = resnet_places.to("cuda")
 
-    object_feature, object_vector = extract_object_feature(
+    object_feature, object_vector_spacy, object_vector_visualgenome = extract_object_feature(
         resnet_trained, h, w)
 
     custom_scene = False
@@ -715,7 +727,8 @@ def main():
                 h5_file = h5py.File("data/" + name + '.h5', 'a')
 
         write_object_feature(h5_file,
-                             object_feature, object_vector)
+                             object_feature, object_vector_spacy, object_vector_visualgenome)
+        continue
 
         # Construct all possible states
         if custom_scene:

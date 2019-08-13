@@ -149,15 +149,26 @@ class word2vec_notarget(nn.Module):
     """Our method network without target word embedding
     """
 
+    def save_gradient(self, grad):
+        self.gradient = grad
+
+    def hook_backward(self, module, grad_input, grad_output):
+        self.gradient_vanilla = grad_input[0]
+
     def __init__(self, method, mask_size=5):
         super(word2vec_notarget, self).__init__()
+
+        self.gradient = None
+        self.gradient_vanilla = None
+        self.conv_output = None
+
         # Observation layer
         self.fc_observation = nn.Linear(8192, 512)
 
         # Convolution for similarity grid
         pooling_kernel = 2
         self.conv1 = nn.Conv2d(1, 8, 3, stride=1)
-        # self.conv1.register_backward_hook(self.hook_backward)
+        self.conv1.register_backward_hook(self.hook_backward)
         self.pool = nn.MaxPool2d(pooling_kernel, pooling_kernel)
         self.conv2 = nn.Conv2d(8, 16, 5, stride=1)
 
@@ -180,7 +191,7 @@ class word2vec_notarget(nn.Module):
 
         z = torch.autograd.Variable(z, requires_grad=True)
         z = self.conv1(z)
-        # z.register_hook(self.save_gradient)
+        z.register_hook(self.save_gradient)
         self.conv_output = z
         z = self.pool(F.relu(z))
         z = self.pool(F.relu(self.conv2(z)))

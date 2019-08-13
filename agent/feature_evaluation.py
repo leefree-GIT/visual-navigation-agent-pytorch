@@ -20,6 +20,10 @@ from tensorboardX import SummaryWriter
 from agent.environment.ai2thor_file import \
     THORDiscreteEnvironment as THORDiscreteEnvironmentFile
 from agent.gpu_thread import GPUThread
+from agent.method.aop import AOP
+from agent.method.gcn import GCN
+from agent.method.similarity_grid import SimilarityGrid
+from agent.method.target_driven import TargetDriven
 from agent.network import SceneSpecificNetwork, SharedNetwork
 from agent.training import TrainingSaver
 from agent.utils import find_restore_points, get_first_free_gpu
@@ -80,6 +84,17 @@ class FeatureEvaluation:
     def run(self):
         random.seed(200)
         num_episode_eval = 10
+
+        self.method_class = None
+        if self.method == 'word2vec' or self.method == 'word2vec_noconv' or self.method == 'word2vec_notarget' or self.method == 'word2vec_nosimi':
+            self.method_class = SimilarityGrid(self.method)
+        elif self.method == 'aop' or self.method == 'aop_we':
+            self.method_class = AOP(self.method)
+        elif self.method == 'target_driven':
+            self.method_class = TargetDriven(self.method)
+        elif self.method == 'gcn':
+            self.method_class = GCN(self.method)
+
         for chk_id in self.chk_numbers:
             scene_stats = dict()
             for scene_scope, items in self.config['task_list'].items():
@@ -107,70 +122,10 @@ class FeatureEvaluation:
                         ep_t = 0
                         terminal = False
                         while not terminal:
-                            if self.method == 'word2vec' or self.method == 'word2vec_noconv':
-                                state = {
-                                    "current": env.render('resnet_features'),
-                                    "goal": env.render_target('word_features'),
-                                    "object_mask": env.render_mask_similarity()
-                                }
-                            elif self.method == 'word2vec_nosimi':
-                                state = {
-                                    "current": env.render('resnet_features'),
-                                    "goal": env.render_target('word_features')
-                                }
-                            elif self.method == 'aop' or self.method == 'aop_we':
-                                state = {
-                                    "current": env.render('resnet_features'),
-                                    "goal": env.render_target('word_features'),
-                                    "object_mask": env.render_mask()
-                                }
-                            elif self.method == 'target_driven':
-                                state = {
-                                    "current": env.render('resnet_features'),
-                                    "goal": env.render_target('resnet_features'),
-                                }
-                            elif self.method == 'gcn':
-                                normalize = transforms.Compose([
-                                    transforms.ToTensor(),
-                                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[
-                                        0.229, 0.224, 0.225])])
-                                state = {
-                                    "current": env.render('resnet_features'),
-                                    "goal": env.render_target('word_features'),
-                                    "observation": normalize(env.observation).unsqueeze(0),
-                                }
-
-                            if self.method == 'word2vec' or self.method == 'aop' or self.method == 'aop_we' or self.method == 'word2vec_noconv':
-                                x_processed = torch.from_numpy(
-                                    state["current"]).to(self.device)
-                                goal_processed = torch.from_numpy(
-                                    state["goal"]).to(self.device)
-                                object_mask = torch.from_numpy(
-                                    state['object_mask']).to(self.device)
-
-                                inputs = (x_processed, goal_processed, object_mask,)
-                            elif self.method == 'target_driven' or self.method == "word2vec_nosimi":
-                                x_processed = torch.from_numpy(
-                                    state["current"]).to(self.device)
-                                goal_processed = torch.from_numpy(
-                                    state["goal"]).to(self.device)
-
-                                inputs = (x_processed, goal_processed,)
-                            elif self.method == "random":
-                                action = np.random.randint(env.action_size)
-                            elif self.method == 'gcn':
-                                x_processed = torch.from_numpy(
-                                    state["current"]).to(self.device)
-                                goal_processed = torch.from_numpy(
-                                    state["goal"]).to(self.device)
-                                obs = state['observation'].to(self.device)
-
-                                inputs = (x_processed, goal_processed, obs,)
 
                             if self.method != "random":
-                                embedding = self.shared_net.forward(inputs)
-                                (policy, _,) = self.scene_net.forward(embedding)
-                                embedding = embedding.cpu().detach().numpy()
+                                policy, value, state = self.method_class.forward_policy(
+                                    env, self.device, lambda x: self.scene_net(self.shared_net(x)))
                                 policy_softmax = F.softmax(policy, dim=0)
                                 action = policy_softmax.multinomial(
                                     1).data.cpu().numpy()[0]
@@ -185,7 +140,10 @@ class FeatureEvaluation:
                             # Compute CAM only for terminal state
                             if terminal and env.success:
                                 # Retrieve the feature from the convolution layer (similarity grid)
-                                conv_output = self.shared_net.conv_output
+                                conv_output = self.shared_net.net.conv_output
+
+                                state, x_processed, object_mask = self.method_class.extract_input(
+                                    env, self.device)
 
                                 # Create one hot vector for outputted action
                                 one_hot_vector = torch.zeros(
@@ -201,10 +159,11 @@ class FeatureEvaluation:
                                 policy.backward(gradient=one_hot_vector, retain_graph=True)
 
                                 # Get hooked gradients for CAM
-                                guided_gradients = self.shared_net.gradient.cpu().data.numpy()[0]
+                                guided_gradients = self.shared_net.net.gradient.cpu().data.numpy()[
+                                    0]
 
                                 # Get hooked gradients for Vanilla
-                                vanilla_grad = self.shared_net.gradient_vanilla.cpu()
+                                vanilla_grad = self.shared_net.net.gradient_vanilla.cpu()
                                 vanilla_grad = vanilla_grad.data.numpy()[0]
 
                                 # Get convolution outputs

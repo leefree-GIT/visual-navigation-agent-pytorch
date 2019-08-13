@@ -170,7 +170,10 @@ class Evaluation:
                                                       terminal_state=task_scope,
                                                       action_size=self.config['action_size'],
                                                       mask_size=self.config.get(
-                                                          'mask_size', 5))
+                                                          'mask_size', 5),
+                                                      bbox_method=self.config.get(
+                                                          'bbox_method', None),
+                                                      we_method=self.config.get('we_method', None))
 
                     ep_rewards = []
                     ep_lengths = []
