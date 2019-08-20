@@ -118,6 +118,8 @@ class THORDiscreteEnvironment(Environment):
             if "Done" not in self.acts[:self.action_size]:
                 print("ERROR: Done action need to be used with soft goal")
                 exit()
+        elif self.reward_fun == 'env_goal':
+            pass
 
         else:
             terminal_pos = list(self.terminal_state['position'].values())
@@ -185,7 +187,13 @@ class THORDiscreteEnvironment(Environment):
             return
         if self.transition_graph[k][action] != -1:
             self.current_state_id = self.transition_graph[k][action]
-            if self.reward_fun != "soft_goal":
+            if self.reward_fun == 'env_goal':
+                for objectId in self.object_visibility[self.current_state_id]:
+                    obj = objectId.split('|')
+                    if obj[0] == self.terminal_state['object']:
+                        self.terminal = True
+                        self.success = True
+            elif self.reward_fun != "soft_goal":
                 agent_pos = self.locations[self.current_state_id]  # NDARRAY
                 # Check only y value
                 agent_rot = self.rotations[self.current_state_id][1]
@@ -202,6 +210,7 @@ class THORDiscreteEnvironment(Environment):
                 else:
                     self.terminal = False
                     self.collided = False
+
         else:
             self.terminal = False
             self.collided = True
@@ -273,6 +282,8 @@ class THORDiscreteEnvironment(Environment):
             return 10.0 if self.terminal else -0.01
         elif self.reward_fun == 'soft_goal':
             return self.reward_soft_goal()
+        elif self.reward_fun == 'env_goal':
+            return self.reward_env_goal()
 
     @property
     def is_terminal(self):
@@ -364,7 +375,7 @@ class THORDiscreteEnvironment(Environment):
 
     def accessible_terminal(self, state):
 
-        if self.reward_fun == 'soft_goal':
+        if self.reward_fun == 'soft_goal' or self.reward_fun == 'env_goal':
             lengths = []
             for i, object_visibility in enumerate(self.object_visibility):
                 for objectId in object_visibility:
@@ -378,7 +389,7 @@ class THORDiscreteEnvironment(Environment):
 
     def shortest_path_terminal(self, state):
 
-        if self.reward_fun == 'soft_goal':
+        if self.reward_fun == 'soft_goal' or self.reward_fun == 'env_goal':
             lengths = []
             for i, object_visibility in enumerate(self.object_visibility):
                 for objectId in object_visibility:
@@ -429,6 +440,32 @@ class THORDiscreteEnvironment(Environment):
                     reward_ = reward_ + GOAL_SUCCESS_REWARD
                     self.success = True
                     break
+        else:
+            reward_ = reward_ + STEP_PENALTY
+
+        return reward_
+
+    def reward_env_goal(self):
+        GOAL_SUCCESS_REWARD = 5
+        STEP_PENALTY = -0.01
+        # BBOX area
+        reward_ = self._calculate_bbox_reward()
+
+        h, w, _ = np.shape(self.h5_file['observation'][0])
+
+        # Normalize
+        reward_ = reward_ / (h*w)
+
+        # Use strict done
+        # Emitted Done signal will trigger end of episode
+        # Giving big reward only if object is visible
+        # Check if object is visible
+        for objectId in self.object_visibility[self.current_state_id]:
+            obj = objectId.split('|')
+            if obj[0] == self.terminal_state['object']:
+                reward_ = reward_ + GOAL_SUCCESS_REWARD
+                self.success = True
+                break
         else:
             reward_ = reward_ + STEP_PENALTY
 

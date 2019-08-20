@@ -235,12 +235,12 @@ class Evaluation:
                             else:
                                 ep_success.append(False)
 
-                        elif ep_t <= 500:
+                        elif ep_t < 300:
                             ep_success.append(True)
                         else:
                             ep_success.append(False)
-                        log.write("episode #{} ends after {} steps".format(
-                            i_episode, ep_t))
+                        log.write("episode #{} ends after {} steps, success : {}".format(
+                            i_episode, ep_t, ep_success[-1]))
 
                     # Get indice of succeed episodes
                     ind_succeed_ep = [

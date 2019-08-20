@@ -89,6 +89,7 @@ if __name__ == '__main__':
     controller.reset(args.scene_name)
     state = controller.step(
         dict(action='Initialize', gridSize=0.5, renderObjectImage=True))
+    # state = controller.step(dict(action='ToggleMapView'))
 
     human_agent_action = None
     human_wants_restart = False
