@@ -23,12 +23,12 @@ logging.basicConfig(level=logging.DEBUG)
 
 
 class TrainingSaver:
-    def __init__(self, shared_network, scene_networks, optimizer, config):
+    def __init__(self, shared_network, scene_network, optimizer, config):
         self.checkpoint_path = config.get(
             'checkpoint_path', 'model/checkpoint-{checkpoint}.pth')
         self.saving_period = config.get('saving_period')
         self.shared_network = shared_network
-        self.scene_networks = scene_networks
+        self.scene_network = scene_network
         self.optimizer = optimizer
         self.config = config
         self.save_count = 0
@@ -52,8 +52,7 @@ class TrainingSaver:
         filename = self.checkpoint_path.replace('{checkpoint}', str(iteration))
         model = dict()
         model['navigation'] = self.shared_network.state_dict()
-        for key, val in self.scene_networks.items():
-            model[f'navigation/{key}'] = val.state_dict()
+        model['navigation/scene'] = self.scene_network.state_dict()
         model['optimizer'] = self.optimizer.state_dict()
         model['config'] = conf
 
@@ -69,13 +68,14 @@ class TrainingSaver:
             self.config = state['config']
             for k, v in conf.items():
                 self.config[k] = v
+        from collections import OrderedDict
+        new_state_dict = OrderedDict()
+        for key, value in state['navigation'].items():
+            new_state_dict['net.'+key] = value
+        self.shared_network.load_state_dict(new_state_dict)
 
-        self.shared_network.load_state_dict(state['navigation'])
-
-        tasks = self.config.get('task_list')
-        for scene in tasks.keys():
-            self.scene_networks[scene].load_state_dict(
-                state[f'navigation/{scene}'])
+        self.scene_network.load_state_dict(
+            state[f'navigation/scene'])
 
 
 class TrainingOptimizer:
@@ -105,8 +105,8 @@ class TrainingOptimizer:
         return self.global_step.item()
 
     def _ensure_shared_grads(self, model, shared_model, gpu=False):
-        for param, shared_param in zip(model.parameters(),
-                                       shared_model.parameters()):
+        for param, shared_param in zip(filter(lambda p: p.requires_grad, model.parameters()),
+                                       filter(lambda p: p.requires_grad, shared_model.parameters())):
             if shared_param.grad is not None and not gpu:
                 return
             elif not gpu:
@@ -214,20 +214,16 @@ class Training:
         # Shared network
         self.shared_network = SharedNetwork(
             self.method, self.config.get('mask_size', 5))
-        self.scene_networks = {key: SceneSpecificNetwork(
-            self.config['action_size']) for key in self.tasks.keys()}
+        self.scene_network = SceneSpecificNetwork(self.config['action_size'])
 
         # Share memory
         self.shared_network = self.shared_network
         self.shared_network.share_memory()
-        for net in self.scene_networks.values():
-            net = net
-            net.share_memory()
+        self.scene_network.share_memory()
 
         # Callect all parameters from all networks
         parameters = list(self.shared_network.parameters())
-        for net in self.scene_networks.values():
-            parameters.extend(net.parameters())
+        parameters.extend(self.scene_network.parameters())
 
         # Create optimizer
         optimizer = SharedRMSprop(
@@ -246,7 +242,7 @@ class Training:
 
         # Initialize saver
         self.saver = TrainingSaver(
-            self.shared_network, self.scene_networks, self.optimizer, self.config)
+            self.shared_network, self.scene_network, self.optimizer, self.config)
 
     def run(self):
         self.logger.info("Training started")
@@ -262,16 +258,12 @@ class Training:
                 branches.append((scene, target))
 
         def _createThread(id, tasks, summary_queue, device):
-            scenes = set([scene for (scene, target) in tasks])
-            networks = {scene: nn.Sequential(self.shared_network,
-                                             self.scene_networks[scene]) for scene in scenes}
-
-            for net in networks.values():
-                net.share_memory()
+            network = nn.Sequential(self.shared_network, self.scene_network)
+            network.share_memory()
 
             return TrainingThread(
                 id=id,
-                networks=networks,
+                networks=network,
                 saver=self.saver,
                 optimizer=self.optimizer,
                 summary_queue=summary_queue,

@@ -22,6 +22,8 @@ class THORDiscreteEnvironment(Environment):
                  history_length: int = 4,
                  terminal_state=0,
                  h5_file_path=None,
+                 bbox_method=None,
+                 we_method=None,
                  action_size: int = 4,
                  mask_size: int = 5,
                  **kwargs):
@@ -78,8 +80,14 @@ class THORDiscreteEnvironment(Environment):
         # Load object resnet feature
         object_feature = self.h5_file['object_feature']
 
+        # Save word embedding method (None is spacy en_core_web_lg, visualgenome is we trained on visual genome)
+        self.we_method = we_method
+
         # Load object word embedding feature
-        self.object_vector = self.h5_file['object_vector']
+        if self.we_method is None:
+            self.object_vector = self.h5_file['object_vector']
+        else:
+            self.object_vector = self.h5_file['object_vector_visualgenome']
 
         # Load shortest path distance between state
         self.shortest_path_distance = self.h5_file['shortest_path_distance']
@@ -87,6 +95,9 @@ class THORDiscreteEnvironment(Environment):
         # Load object visibility
         self.object_visibility = [json.loads(j) for j in
                                   self.h5_file['object_visibility']]
+
+        # Save bbox method (None is groundtruth, yolo is yolo bbox)
+        self.bbox_method = bbox_method
 
         self.bbox_area = 0
         self.max_bbox_area = 0
@@ -105,6 +116,8 @@ class THORDiscreteEnvironment(Environment):
             if "Done" not in self.acts[:self.action_size]:
                 print("ERROR: Done action need to be used with soft goal")
                 exit()
+        elif self.reward_fun == 'env_goal':
+            pass
 
         else:
             terminal_pos = list(self.terminal_state['position'].values())
@@ -114,7 +127,7 @@ class THORDiscreteEnvironment(Environment):
                     break
 
         # LAST instruction
-        if self.method == 'word2vec':
+        if self.method == 'word2vec' or self.method == 'word2vec_nosimi' or self.method == 'word2vec_noconv' or self.method == 'word2vec_notarget' or self.method == 'gcn' or self.method == 'aop_we':
             self.s_target = self.object_vector[self.object_ids[self.terminal_state['object']]]
 
         elif self.method == 'aop':
@@ -129,32 +142,38 @@ class THORDiscreteEnvironment(Environment):
                         terminal_id = i
                         break
             self.s_target = self._tiled_state(terminal_id)
+        elif self.method == "random":
+            pass
         else:
             raise Exception('Please choose a method')
 
         self.mask_size = mask_size
 
-    def reset(self):
+    def reset(self, set_state=True):
         # randomize initial state
-        ks = np.arange(0, self.n_locations)
-        random.shuffle(ks)
-        k_set = False
-        while not k_set:
-            for k in ks:
-                # Assure that Z value is 0
-                if self.rotations[k][2] == 0:
-                    # Assure that shortest path is higher than 5
-                    if self.accessible_terminal(k):
-                        k_set = True
-                        break
-            if not k_set:
-                print(self.scene, 'Did not find shorstest path higher than',
-                      self.shortest_path_threshold, "for", self.terminal_state['object'])
-                self.shortest_path_threshold = self.shortest_path_threshold - 1
-        # reset parameters
-        self.current_state_id = k
-        self.start_state_id = k
-        self.s_t = self._tiled_state(self.current_state_id)
+        if set_state:
+            ks = np.arange(0, self.n_locations)
+            random.shuffle(ks)
+            k_set = False
+            k_final = None
+            while not k_set:
+                for k in ks:
+                    # Assure that Z value is 0
+                    if self.rotations[k][2] == 0:
+                        # Assure that shortest path is higher than 0 (not starting in final state)
+                        if self.accessible_terminal(k) and self.shortest_path_terminal(k) > 0:
+                            k_set = True
+                            k_final = k
+                            break
+                if not k_set:
+                    print(self.scene, 'Did not find accessible state for',
+                          self.terminal_state['object'])
+                    exit()
+            # reset parameters
+            self.current_state_id = k_final
+            self.start_state_id = k_final
+        if self.method != "random":
+            self.s_t = self._tiled_state(self.current_state_id)
         self.collided = False
         self.terminal = False
         self.bbox_area = 0
@@ -170,7 +189,13 @@ class THORDiscreteEnvironment(Environment):
             return
         if self.transition_graph[k][action] != -1:
             self.current_state_id = self.transition_graph[k][action]
-            if self.reward_fun != "soft_goal":
+            if self.reward_fun == 'env_goal':
+                for objectId in self.object_visibility[self.current_state_id]:
+                    obj = objectId.split('|')
+                    if obj[0] == self.terminal_state['object']:
+                        self.terminal = True
+                        self.success = True
+            elif self.reward_fun != "soft_goal":
                 agent_pos = self.locations[self.current_state_id]  # NDARRAY
                 # Check only y value
                 agent_rot = self.rotations[self.current_state_id][1]
@@ -187,12 +212,14 @@ class THORDiscreteEnvironment(Environment):
                 else:
                     self.terminal = False
                     self.collided = False
+
         else:
             self.terminal = False
             self.collided = True
 
-        self.s_t = np.append(self.s_t[:, 1:], self._get_state(
-            self.current_state_id), axis=1)
+        if self.method != "random":
+            self.s_t = np.append(self.s_t[:, 1:], self._get_state(
+                self.current_state_id), axis=1)
 
         # Retrieve bounding box area of target object class
         self.bbox_area = self._get_max_bbox_area(
@@ -257,6 +284,8 @@ class THORDiscreteEnvironment(Environment):
             return 10.0 if self.terminal else -0.01
         elif self.reward_fun == 'soft_goal':
             return self.reward_soft_goal()
+        elif self.reward_fun == 'env_goal':
+            return self.reward_env_goal()
 
     @property
     def is_terminal(self):
@@ -268,14 +297,17 @@ class THORDiscreteEnvironment(Environment):
 
     @property
     def boudingbox(self):
-        return json.loads(self.h5_file['bbox'][self.current_state_id])
+        if self.bbox_method is None:
+            return json.loads(self.h5_file['bbox'][self.current_state_id])
+        elif self.bbox_method == 'yolo':
+            return json.loads(self.h5_file['yolo_bbox'][self.current_state_id])
 
     def render(self, mode):
         assert mode == 'resnet_features'
         return self.s_t
 
     def render_target(self, mode):
-        if self.method == 'aop' or self.method == 'word2vec':
+        if self.method == 'aop' or self.method == 'aop_we' or self.method == 'word2vec' or self.method == 'word2vec_nosimi' or self.method == 'word2vec_noconv' or self.method == "gcn":
             assert mode == 'word_features'
             return self.s_target
         elif self.method == 'target_driven':
@@ -345,7 +377,7 @@ class THORDiscreteEnvironment(Environment):
 
     def accessible_terminal(self, state):
 
-        if self.reward_fun == 'soft_goal':
+        if self.reward_fun == 'soft_goal' or self.reward_fun == 'env_goal':
             lengths = []
             for i, object_visibility in enumerate(self.object_visibility):
                 for objectId in object_visibility:
@@ -359,7 +391,7 @@ class THORDiscreteEnvironment(Environment):
 
     def shortest_path_terminal(self, state):
 
-        if self.reward_fun == 'soft_goal':
+        if self.reward_fun == 'soft_goal' or self.reward_fun == 'env_goal':
             lengths = []
             for i, object_visibility in enumerate(self.object_visibility):
                 for objectId in object_visibility:
@@ -410,6 +442,32 @@ class THORDiscreteEnvironment(Environment):
                     reward_ = reward_ + GOAL_SUCCESS_REWARD
                     self.success = True
                     break
+        else:
+            reward_ = reward_ + STEP_PENALTY
+
+        return reward_
+
+    def reward_env_goal(self):
+        GOAL_SUCCESS_REWARD = 5
+        STEP_PENALTY = -0.01
+        # BBOX area
+        reward_ = self._calculate_bbox_reward()
+
+        h, w, _ = np.shape(self.h5_file['observation'][0])
+
+        # Normalize
+        reward_ = reward_ / (h*w)
+
+        # Use strict done
+        # Emitted Done signal will trigger end of episode
+        # Giving big reward only if object is visible
+        # Check if object is visible
+        for objectId in self.object_visibility[self.current_state_id]:
+            obj = objectId.split('|')
+            if obj[0] == self.terminal_state['object']:
+                reward_ = reward_ + GOAL_SUCCESS_REWARD
+                self.success = True
+                break
         else:
             reward_ = reward_ + STEP_PENALTY
 

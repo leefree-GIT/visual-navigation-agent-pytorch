@@ -39,7 +39,10 @@ if __name__ == '__main__':
         print('ERROR Please choose a method in json file')
         print('- "aop"')
         print('- "word2vec"')
+        print('- "word2vec_noconv"')
+        print('- "word2vec_nosimi"')
         print('- "target_driven"')
+        print('- "random"')
 
         exit()
 

@@ -11,3 +11,4 @@ gputil
 opencv-python
 scipy
 networkx
+gensim

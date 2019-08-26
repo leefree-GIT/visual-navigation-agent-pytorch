@@ -15,7 +15,12 @@ import torch.nn.functional as F
 
 from agent.environment.ai2thor_file import \
     THORDiscreteEnvironment as THORDiscreteEnvironmentFile
+from agent.method.aop import AOP
+from agent.method.gcn import GCN
+from agent.method.similarity_grid import SimilarityGrid
+from agent.method.target_driven import TargetDriven
 from agent.network import ActorCriticLoss, SceneSpecificNetwork, SharedNetwork
+from torchvision import transforms
 
 
 class ForkablePdb(pdb.Pdb):
@@ -91,11 +96,11 @@ class TrainingThread(mp.Process):
     def _sync_network(self, scene):
         if self.init_args['cuda']:
             with torch.cuda.device(self.device):
-                state_dict = self.master_network[scene].state_dict()
-                self.policy_networks[scene].load_state_dict(state_dict)
+                state_dict = self.master_network.state_dict()
+                self.policy_networks.load_state_dict(state_dict)
         else:
-            state_dict = self.master_network[scene].state_dict()
-            self.policy_networks[scene].load_state_dict(state_dict)
+            state_dict = self.master_network.state_dict()
+            self.policy_networks.load_state_dict(state_dict)
 
     def get_action_space_size(self):
         return len(self.envs[0].actions)
@@ -133,9 +138,8 @@ class TrainingThread(mp.Process):
 
         self.criterion = ActorCriticLoss(entropy_beta)
 
-        self.policy_networks = {scene: nn.Sequential(
-            SharedNetwork(self.method, self.mask_size), SceneSpecificNetwork(self.get_action_space_size())).to(self.device)
-            for scene in self.scenes}
+        self.policy_networks = nn.Sequential(SharedNetwork(
+            self.method, self.mask_size), SceneSpecificNetwork(self.get_action_space_size())).to(self.device)
         # Store action for each episode
         self.saved_actions = []
         # Initialize the episode
@@ -143,6 +147,16 @@ class TrainingThread(mp.Process):
             self._reset_episode(idx)
         for scene in self.scenes:
             self._sync_network(scene)
+
+        self.method_class = None
+        if self.method == 'word2vec' or self.method == 'word2vec_noconv' or self.method == 'word2vec_notarget' or self.method == 'word2vec_nosimi':
+            self.method_class = SimilarityGrid(self.method)
+        elif self.method == 'aop' or self.method == 'aop_we':
+            self.method_class = AOP(self.method)
+        elif self.method == 'target_driven':
+            self.method_class = TargetDriven(self.method)
+        elif self.method == 'gcn':
+            self.method_class = GCN(self.method)
 
     def _reset_episode(self, idx):
         self.saved_actions = []
@@ -162,45 +176,8 @@ class TrainingThread(mp.Process):
         # Plays out one game to end or max_t
         for t in range(self.max_t):
 
-            # Resnet feature are extracted or computed here
-            if self.method == 'word2vec':
-                state = {
-                    "current": self.envs[idx].render('resnet_features'),
-                    "goal": self.envs[idx].render_target('word_features'),
-                    "object_mask": self.envs[idx].render_mask_similarity()
-                }
-            elif self.method == 'aop':
-                state = {
-                    "current": self.envs[idx].render('resnet_features'),
-                    "goal": self.envs[idx].render_target('word_features'),
-                    "object_mask": self.envs[idx].render_mask()
-                }
-            elif self.method == 'target_driven':
-                state = {
-                    "current": self.envs[idx].render('resnet_features'),
-                    "goal": self.envs[idx].render_target('resnet_features'),
-                }
-
-            if self.method == 'word2vec' or self.method == 'aop':
-                x_processed = torch.from_numpy(state["current"])
-                goal_processed = torch.from_numpy(state["goal"])
-                object_mask = torch.from_numpy(state['object_mask'])
-
-                x_processed = x_processed.to(self.device)
-                goal_processed = goal_processed.to(self.device)
-                object_mask = object_mask.to(self.device)
-
-                (policy, value) = self.policy_networks[scene](
-                    (x_processed, goal_processed, object_mask,))
-            elif self.method == 'target_driven':
-                x_processed = torch.from_numpy(state["current"])
-                goal_processed = torch.from_numpy(state["goal"])
-
-                x_processed = x_processed.to(self.device)
-                goal_processed = goal_processed.to(self.device)
-
-                (policy, value) = self.policy_networks[scene](
-                    (x_processed, goal_processed,))
+            policy, value, state = self.method_class.forward_policy(
+                self.envs[idx], self.device, self.policy_networks)
 
             if (self.id == 0) and (self.local_t % 100) == 0:
                 print(f'Local Step {self.local_t}')
@@ -295,43 +272,8 @@ class TrainingThread(mp.Process):
         if terminal_end:
             return 0.0, results, rollout_path, terminal_end
         else:
-            if self.method == 'word2vec':
-                state = {
-                    "current": self.envs[idx].render('resnet_features'),
-                    "goal": self.envs[idx].render_target('word_features'),
-                    "object_mask": self.envs[idx].render_mask_similarity()
-                }
-            elif self.method == 'aop':
-                state = {
-                    "current": self.envs[idx].render('resnet_features'),
-                    "goal": self.envs[idx].render_target('word_features'),
-                    "object_mask": self.envs[idx].render_mask()
-                }
-            elif self.method == 'target_driven':
-                state = {
-                    "current": self.envs[idx].render('resnet_features'),
-                    "goal": self.envs[idx].render_target('resnet_features'),
-                }
-            if self.method == 'word2vec' or self.method == 'aop':
-                x_processed = torch.from_numpy(state["current"])
-                goal_processed = torch.from_numpy(state["goal"])
-                object_mask = torch.from_numpy(state['object_mask'])
-
-                x_processed = x_processed.to(self.device)
-                goal_processed = goal_processed.to(self.device)
-                object_mask = object_mask.to(self.device)
-
-                (policy, value) = self.policy_networks[scene](
-                    (x_processed, goal_processed, object_mask,))
-            elif self.method == 'target_driven':
-                x_processed = torch.from_numpy(state["current"])
-                goal_processed = torch.from_numpy(state["goal"])
-
-                x_processed = x_processed.to(self.device)
-                goal_processed = goal_processed.to(self.device)
-
-                (policy, value) = self.policy_networks[scene](
-                    (x_processed, goal_processed,))
+            policy, value, state = self.method_class.forward_policy(
+                self.envs[idx], self.device, self.policy_networks)
             return value.data.item(), results, rollout_path, terminal_end
 
     def _optimize_path(self, scene, playout_reward: float, results, rollout_path):
@@ -371,8 +313,8 @@ class TrainingThread(mp.Process):
 
         # loss_value = loss.detach().numpy()
         self.optimizer.optimize(loss,
-                                self.policy_networks[scene],
-                                self.master_network[scene],
+                                self.policy_networks,
+                                self.master_network,
                                 self.init_args['cuda'])
 
     def run(self, master=None):
