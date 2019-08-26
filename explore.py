@@ -64,13 +64,16 @@ def rollout(env, state):
             # print(env.get_state.instance_detections2D)
             for bbox in state.instance_detections2D.keys():
                 print(bbox.split('|')[0])
+            obj_visible = [obj['objectId']
+                           for obj in state.metadata['objects'] if obj['visible']]
+            print(obj_visible)
             print(state.metadata['agent']['position'],
                   state.metadata['agent']['rotation'])
             info = False
         # check quit command
         if stop_requested:
             break
-        viewer.imshow(state.frame)
+        viewer.imshow(np.zeros((30, 30, 3), dtype=np.uint8))
 
 
 if __name__ == '__main__':
@@ -86,6 +89,7 @@ if __name__ == '__main__':
     controller.reset(args.scene_name)
     state = controller.step(
         dict(action='Initialize', gridSize=0.5, renderObjectImage=True))
+    # state = controller.step(dict(action='ToggleMapView'))
 
     human_agent_action = None
     human_wants_restart = False
@@ -93,7 +97,7 @@ if __name__ == '__main__':
     info = False
 
     viewer = SimpleImageViewer()
-    viewer.imshow(state.frame)
+    viewer.imshow(np.zeros((30, 30, 3), dtype=np.uint8))
     viewer.window.on_key_press = key_press
 
     print("Use arrow keys to move the agent.")

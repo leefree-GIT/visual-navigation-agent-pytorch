@@ -78,7 +78,9 @@ def populate_config(config, mode='train', checkpoint=True):
 
     base_path = os.path.dirname(exp_path) + '/'
     config['base_path'] = base_path
-    config['log_path'] = base_path + 'logs'
+    from datetime import datetime
+    config['log_path'] = base_path + 'logs/' + \
+        datetime.now().strftime('%b%d_%H-%M-%S')
     if checkpoint:
         config['checkpoint_path'] = base_path + 'checkpoints/{checkpoint}.pth'
     config['h5_file_path'] = json_dump['h5_file_path']

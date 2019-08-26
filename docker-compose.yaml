@@ -19,20 +19,6 @@ services:
     depends_on:
       - agent
 
-  train_resnet:
-    ipc: host
-    runtime: nvidia
-    command: "python -u /app/train.py -e /exp/$EXPERIMENT/param.json"
-    image: norips/visual-navigation-agent-pytorch
-    volumes:
-      - ./EXPERIMENTS:/exp
-      - ./data:/app/data
-    environment:
-      - PYTHONUNBUFFERED=1 
-      - OMP_NUM_THREADS=1
-    depends_on:
-      - agent
-
   eval:
     ipc: host
     runtime: nvidia

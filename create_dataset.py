@@ -1,4 +1,5 @@
 import argparse
+import gc
 import json
 import os
 import re
@@ -8,19 +9,70 @@ import ai2thor.controller
 import h5py
 import numpy as np
 import spacy
+import tensorflow as tf
+import torch
 from keras.applications import resnet50
+from keras.backend.tensorflow_backend import set_session
 from PIL import Image
 from tqdm import tqdm
 
-names = ["FloorPlan1", "FloorPlan2", "FloorPlan201", "FloorPlan202",
-         "FloorPlan301", "FloorPlan302", "FloorPlan401", "FloorPlan402"]
+import torchvision.models as models
+import torchvision.transforms as transforms
+from pytorchyolo3.darknet import Darknet
+from pytorchyolo3.models.tiny_yolo import TinyYoloNet
+from pytorchyolo3.utils import *
+
+scene_type = []
+SCENES = [0, 200, 300, 400]
+TRAIN_SPLIT = (1, 22)
+TEST_SPLIT = (22, 27)
+
+KITCHEN_OBJECT_CLASS_LIST = [
+    "Toaster",
+    "Microwave",
+    "Fridge",
+    "CoffeeMachine",
+    "GarbageCan",
+    "Bowl",
+]
+
+LIVING_ROOM_OBJECT_CLASS_LIST = [
+    "Pillow",
+    "Laptop",
+    "Television",
+    "GarbageCan",
+    "Bowl",
+]
+
+BEDROOM_OBJECT_CLASS_LIST = ["HousePlant", "Lamp", "Book", "AlarmClock"]
+
+
+BATHROOM_OBJECT_CLASS_LIST = [
+    "Sink", "ToiletPaper", "SoapBottle", "LightSwitch"]
+SCENE_TASKS = [KITCHEN_OBJECT_CLASS_LIST, LIVING_ROOM_OBJECT_CLASS_LIST,
+               BEDROOM_OBJECT_CLASS_LIST, BATHROOM_OBJECT_CLASS_LIST]
+
+
+def construct_scene_names():
+    names = []
+    for idx, scene in enumerate(SCENES):
+        for t in range(*TRAIN_SPLIT):
+            names.append("FloorPlan" + str(scene + t))
+            scene_type.append(idx)
+        for t in range(*TEST_SPLIT):
+            names.append("FloorPlan" + str(scene + t))
+            scene_type.append(idx)
+    return names, scene_type
+
+
 grid_size = 0.5
 
 actions = ["MoveAhead", "RotateRight", "RotateLeft",
            "MoveBack", "LookUp", "LookDown", "MoveRight", "MoveLeft"]
 rotation_possible_inplace = 4
 ACTION_SIZE = len(actions)
-StateStruct = namedtuple("StateStruct", "id pos rot obs feat bbox obj_visible")
+StateStruct = namedtuple(
+    "StateStruct", "id pos rot obs semantic_obs feat feat_place bbox obj_visible")
 
 # Extracted from unity/Assets/Scripts/SimObjType.cs
 OBJECT_IDS = {
@@ -176,7 +228,7 @@ OBJECT_IDS = {
 
 
 def equal(s1, s2):
-    if s1.pos == s2.pos:
+    if s1.pos["x"] == s2.pos["x"] and s1.pos["z"] == s2.pos["z"]:
         if s1.rot == s2.rot:
             return True
     return False
@@ -193,19 +245,54 @@ class NumpyEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, np.ndarray):
             return obj.tolist()
+        elif isinstance(obj, np.int64):
+            return int(obj)
         return json.JSONEncoder.default(self, obj)
 
 
-def create_states(h5_file, resnet_trained, controller, name, args):
+def create_states(h5_file, resnet_trained, resnet_places, controller, name, args, scene_type):
     # Reset the environnment
     controller.reset(name)
-    if args['eval']:
-        controller.step(dict(action='InitialRandomSpawn',
-                             randomSeed=100, forceVisible=True, maxNumRepeats=5))
 
     # gridSize specifies the coarseness of the grid that the agent navigates on
     state = controller.step(
-        dict(action='Initialize', gridSize=grid_size, renderObjectImage=True))
+        dict(action='Initialize', gridSize=grid_size, renderObjectImage=True, renderClassImage=True))
+
+    it = 0
+    while it < 5:
+        if args['eval']:
+            state = controller.step(dict(action='InitialRandomSpawn',
+                                         randomSeed=100, forceVisible=True, maxNumRepeats=30))
+        else:
+            state = controller.step(dict(action='InitialRandomSpawn',
+                                         randomSeed=200, forceVisible=True, maxNumRepeats=30))
+
+        # Check that every object is in scene
+        scene_task = SCENE_TASKS[scene_type]
+        obj_present = [False for i in scene_task]
+        for obj in state.metadata['objects']:
+            objectId = obj['objectId']
+            obj_name = objectId.split('|')[0]
+            for idx, _ in enumerate(obj_present):
+                if obj_name == scene_task[idx]:
+                    obj_present[idx] = True
+
+        if np.all(obj_present):
+            break
+        else:
+            it = it + 1
+    print(it)
+    # Store available objects
+    available_obj = set()
+    for obj in state.metadata['objects']:
+        objectId = obj['objectId']
+        obj_name = objectId.split('|')[0]
+        available_obj.add(obj_name)
+    available_obj = list(available_obj)
+    print("Obj available", available_obj)
+
+    h5_file.attrs["task_present"] = np.string_(
+        json.dumps(available_obj, cls=NumpyEncoder))
 
     reachable_pos = controller.step(dict(
         action='GetReachablePositions', gridSize=grid_size)).metadata['reachablePositions']
@@ -215,11 +302,12 @@ def create_states(h5_file, resnet_trained, controller, name, args):
     idx = 0
     # Does not redo if already existing
     if args['force'] or \
-        'resnet_feature' not in h5_file.keys() or \
+        ('resnet_feature' not in h5_file.keys() and not args['view']) or \
         'observation' not in h5_file.keys() or \
         'location' not in h5_file.keys() or \
         'rotation' not in h5_file.keys() or \
-            'bbox' not in h5_file.keys():
+        'bbox' not in h5_file.keys() or \
+            ('semantic_obs' not in h5_file.keys() and not args['view']):
         for pos in tqdm(reachable_pos, desc="Feature extraction"):
             state = controller.step(dict(action='Teleport', **pos))
             # Normal/Up/Down view
@@ -234,11 +322,29 @@ def create_states(h5_file, resnet_trained, controller, name, args):
                 for a in range(rotation_possible_inplace):
                     state = controller.step(dict(action="RotateLeft"))
                     state.metadata['agent']['rotation']['z'] = state.metadata['agent']['cameraHorizon']
-                    obs_process = resnet50.preprocess_input(state.frame)
-                    obs_process = obs_process[np.newaxis, ...]
+                    feature = None
+                    feature_place = None
+                    if ('resnet_feature' not in h5_file.keys() or args['force']) and not args['view']:
+                        obs_process = resnet50.preprocess_input(state.frame)
+                        obs_process = obs_process[np.newaxis, ...]
 
-                    # Extract resnet feature from observation
-                    feature = resnet_trained.predict(obs_process)
+                        # Extract resnet feature from observation
+                        feature = resnet_trained.predict(obs_process)
+
+                        # Extract resnet place feature from observation
+                        input_place = torch.from_numpy(
+                            state.frame.copy()/255.0)
+                        input_place = input_place.to(
+                            "cuda", dtype=torch.float32)
+                        input_place = input_place/255
+                        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                         std=[0.229, 0.224, 0.225])
+                        input_place = input_place.unsqueeze(0)
+                        input_place = input_place.permute(0, 3, 2, 1)
+                        feature_place = resnet_places(input_place)
+                        feature_place = feature_place.cpu().detach().numpy()
+                        feature_place = feature_place.squeeze()[
+                            np.newaxis, ...]
 
                     # Store visible objects from the agent (visible = 1m away from the agent)
                     obj_visible = [obj['objectId']
@@ -248,17 +354,19 @@ def create_states(h5_file, resnet_trained, controller, name, args):
                         state.metadata['agent']['position'],
                         state.metadata['agent']['rotation'],
                         obs=state.frame,
+                        semantic_obs=state.class_segmentation_frame,
                         feat=feature,
+                        feat_place=feature_place,
                         bbox=json.dumps(
                             state.instance_detections2D, cls=NumpyEncoder),
                         obj_visible=json.dumps(obj_visible))
 
                     if search_namedtuple(states, state_struct):
                         print("Already exists")
-                        exit()
-
-                    states.append(state_struct)
-                    idx = idx + 1
+                        # exit()
+                    else:
+                        states.append(state_struct)
+                        idx = idx + 1
 
                 # Reset camera
                 if i == 1:
@@ -267,36 +375,69 @@ def create_states(h5_file, resnet_trained, controller, name, args):
                     state = controller.step(dict(action="LookUp"))
 
         # Save it to h5 file
-        if 'resnet_feature' in h5_file.keys():
-            del h5_file['resnet_feature']
-        h5_file.create_dataset(
-            'resnet_feature', data=[s.feat for s in states])
+        if args['force'] or 'resnet_feature' not in h5_file.keys() and not args['view']:
+            if 'resnet_feature' in h5_file.keys():
+                del h5_file['resnet_feature']
+            h5_file.create_dataset(
+                'resnet_feature', data=[s.feat for s in states])
 
-        if 'observation' in h5_file.keys():
-            del h5_file['observation']
-        h5_file.create_dataset(
-            'observation', data=[s.obs for s in states])
+        if args['force'] or 'observation' not in h5_file.keys():
+            if 'observation' in h5_file.keys():
+                del h5_file['observation']
+            h5_file.create_dataset(
+                'observation', data=[s.obs for s in states])
 
-        if 'location' in h5_file.keys():
-            del h5_file['location']
-        h5_file.create_dataset(
-            'location', data=[list(s.pos.values()) for s in states])
+        if args['force'] or 'location' not in h5_file.keys():
+            if 'location' in h5_file.keys():
+                del h5_file['location']
+            h5_file.create_dataset(
+                'location', data=[list(s.pos.values()) for s in states])
 
-        if 'rotation' in h5_file.keys():
-            del h5_file['rotation']
-        h5_file.create_dataset(
-            'rotation', data=[list(s.rot.values()) for s in states])
+        if args['force'] or 'rotation' not in h5_file.keys():
+            if 'rotation' in h5_file.keys():
+                del h5_file['rotation']
+            h5_file.create_dataset(
+                'rotation', data=[list(s.rot.values()) for s in states])
 
-        if 'bbox' in h5_file.keys():
-            del h5_file['bbox']
-        h5_file.create_dataset(
-            'bbox', data=[s.bbox.encode("ascii", "ignore") for s in states])
+        if args['force'] or 'bbox' not in h5_file.keys():
+            if 'bbox' in h5_file.keys():
+                del h5_file['bbox']
+            h5_file.create_dataset(
+                'bbox', data=[s.bbox.encode("ascii", "ignore") for s in states])
 
-        if 'object_visibility' in h5_file.keys():
-            del h5_file['object_visibility']
-        h5_file.create_dataset(
-            'object_visibility', data=[s.obj_visible.encode("ascii", "ignore") for s in states])
-    return states
+        if args['force'] or 'object_visibility' not in h5_file.keys():
+            if 'object_visibility' in h5_file.keys():
+                del h5_file['object_visibility']
+            h5_file.create_dataset(
+                'object_visibility', data=[s.obj_visible.encode("ascii", "ignore") for s in states])
+
+        if args['force'] or 'semantic_obs' not in h5_file.keys() and not args['view']:
+            if 'semantic_obs' in h5_file.keys():
+                del h5_file['semantic_obs']
+            h5_file.create_dataset(
+                'semantic_obs', data=[s.semantic_obs for s in states])
+
+        return states
+    else:
+        ind_axis = ['x', 'y', 'z']
+        for idx, _ in enumerate(h5_file['location']):
+            pos = dict()
+            rot = dict()
+            for i, _ in enumerate(h5_file['location'][idx]):
+                pos[ind_axis[i]] = h5_file['location'][idx][i]
+                rot[ind_axis[i]] = h5_file['rotation'][idx][i]
+            state_struct = StateStruct(
+                idx,
+                pos=pos,
+                rot=rot,
+                obs=None,
+                semantic_obs=None,
+                feat=None,
+                feat_place=None,
+                bbox=None,
+                obj_visible=None)
+            states.append(state_struct)
+        return states
 
 
 def create_graph(h5_file, states, controller, args):
@@ -318,7 +459,9 @@ def create_graph(h5_file, states, controller, args):
                                                      state_controller.metadata['agent']['position'],
                                                      state_controller.metadata['agent']['rotation'],
                                                      obs=None,
+                                                     semantic_obs=None,
                                                      feat=None,
+                                                     feat_place=None,
                                                      bbox=None,
                                                      obj_visible=None)
 
@@ -326,9 +469,9 @@ def create_graph(h5_file, states, controller, args):
                     found = search_namedtuple(
                         states, state_controller_named)
                     if found is None:
+                        # print([(s.pos, s.rot) for s in states])
                         # print(state_controller_named)
-                        # print("Error, state not found")
-                        # exit()
+                        print("Error, state not found")
                         continue
                     graph[state.id][i] = found.id
         if 'graph' in h5_file.keys():
@@ -337,9 +480,11 @@ def create_graph(h5_file, states, controller, args):
         h5_file.create_dataset(
             'graph', data=graph)
         return graph
+    else:
+        return h5_file['graph']
 
 
-def write_object_feature(h5_file, object_feature, object_vector):
+def write_object_feature(h5_file, object_feature, object_vector, object_vector_visualgenome):
     # Write object_feature (resnet features)
     if 'object_feature' in h5_file.keys():
         del h5_file['object_feature']
@@ -351,6 +496,11 @@ def write_object_feature(h5_file, object_feature, object_vector):
         del h5_file['object_vector']
     h5_file.create_dataset(
         'object_vector', data=object_vector)
+    # Write object_vector (word embedding features)
+    if 'object_vector_visualgenome' in h5_file.keys():
+        del h5_file['object_vector_visualgenome']
+    h5_file.create_dataset(
+        'object_vector_visualgenome', data=object_vector_visualgenome)
 
     h5_file.attrs["object_ids"] = np.string_(json.dumps(OBJECT_IDS))
 
@@ -382,6 +532,7 @@ def extract_word_emb_vector(nlp, word_name):
 def extract_object_feature(resnet_trained, h, w):
     # Use scapy to extract vector from word embeddings
     nlp = spacy.load('en_core_web_lg')  # Use en_core_web_lg for more words
+    nlp_visual = spacy.load('./word2vec_visualgenome/visualgenome_spacy')
 
     # Use glob to list object image
     import glob
@@ -390,6 +541,7 @@ def extract_object_feature(resnet_trained, h, w):
     object_feature = np.zeros((len(OBJECT_IDS), 2048), dtype=np.float32)
     # 300 is the word embeddings feature size
     object_vector = np.zeros((len(OBJECT_IDS), 300), dtype=np.float32)
+    object_vector_visualgenome = np.zeros((len(OBJECT_IDS), 300), dtype=np.float32)
     # List all jpg files in data/objects/
     for filepath in glob.glob('data/objects/*.jpg'):
 
@@ -409,15 +561,21 @@ def extract_object_feature(resnet_trained, h, w):
     for object_name, object_id in OBJECT_IDS.items():
         norm_word_vec = extract_word_emb_vector(nlp, object_name)
         if norm_word_vec is None:
-            print(object_name)
+            print("Spacy no we for", object_name)
         object_vector[object_id] = norm_word_vec
 
-    return object_feature, object_vector
+        norm_word_vec_vg = extract_word_emb_vector(nlp_visual, object_name)
+        if norm_word_vec_vg is None:
+            print("Visual genome no we for", object_name)
+        object_vector_visualgenome[object_id] = norm_word_vec_vg
+
+    return object_feature, object_vector, object_vector_visualgenome
 
 
 def create_shortest_path(h5_file, states, graph):
     # Usee network to compute shortest path
     import networkx as nx
+    from networkx.readwrite import json_graph
     num_states = len(states)
     G = nx.Graph()
     shortest_dist_graph = np.full((num_states, num_states), -1)
@@ -429,15 +587,62 @@ def create_shortest_path(h5_file, states, graph):
             if graph[state.id][i] != -1:
                 G.add_edge(state.id, graph[state.id][i])
     shortest_path = nx.shortest_path(G)
+
     for state_id_src in range(num_states):
         for state_id_dst in range(num_states):
-            shortest_dist_graph[state_id_src][state_id_dst] = len(
-                shortest_path[state_id_src][state_id_dst]) - 1
+            try:
+                shortest_dist_graph[state_id_src][state_id_dst] = len(
+                    shortest_path[state_id_src][state_id_dst]) - 1
+            except KeyError:
+                # No path between states
+                print(state_id_src, state_id_dst)
+                shortest_dist_graph[state_id_src][state_id_dst] = -1
 
     if 'shortest_path_distance' in h5_file.keys():
         del h5_file['shortest_path_distance']
     h5_file.create_dataset('shortest_path_distance',
                            data=shortest_dist_graph)
+    if 'networkx_graph' in h5_file.keys():
+        del h5_file['networkx_graph']
+    h5_file.create_dataset("networkx_graph", data=np.array(
+        [json.dumps(json_graph.node_link_data(G), cls=NumpyEncoder)], dtype='S'))
+
+
+def extract_yolobbox(h5_file):
+
+    if 'yolo_bbox' not in h5_file.keys():
+        yolo_bbox = []
+        m = Darknet("yolo_dataset/yolov3_ai2thor.cfg")
+        m.load_weights("yolo_dataset/backup/yolov3_ai2thor_best.weights")
+        m.print_network()
+        m.cuda()
+
+        namesfile = "yolo_dataset/obj.names"
+        class_names = load_class_names(namesfile)
+
+        for obs in h5_file['observation']:
+            img = Image.fromarray(obs).convert('RGB')
+            sized = img.resize((m.width, m.height))
+
+            current_bbox = dict()
+            boxes = do_detect(m, sized, 0.5, 0.4, 1)
+            width, height = img.size
+            for box in boxes:
+                x1 = int(round(float((box[0] - box[2]/2.0) * width)))
+                y1 = int(round(float((box[1] - box[3]/2.0) * height)))
+                x2 = int(round(float((box[0] + box[2]/2.0) * width)))
+                y2 = int(round(float((box[1] + box[3]/2.0) * height)))
+
+                cls_conf = box[5]
+                cls_id = box[6]
+
+                obj_name = class_names[cls_id] + '|'
+                current_bbox[obj_name] = [x1, y1, x2, y2]
+            yolo_bbox.append(json.dumps(
+                current_bbox, cls=NumpyEncoder))
+
+        h5_file.create_dataset('yolo_bbox',
+                               data=[y.encode("ascii", "ignore") for y in yolo_bbox])
 
 
 def main():
@@ -445,43 +650,93 @@ def main():
     parser = argparse.ArgumentParser(description='Dataset creation.')
     parser.add_argument('--eval', action='store_true')
     parser.add_argument('--force', action='store_true')
+    parser.add_argument('--scene', type=str, default=None)
+    parser.add_argument('--view', action='store_true')
     args = vars(parser.parse_args())
     controller = ai2thor.controller.Controller()
 
     w, h = 400, 300
+    if args['view']:
+        w, h = 800, 600
     controller.start(player_screen_width=w, player_screen_height=h)
 
     # Use resnet from Keras to compute features
+    config = tf.ConfigProto()
+    config.gpu_options.per_process_gpu_memory_fraction = 0.3
+    set_session(tf.Session(config=config))
     resnet_trained = resnet50.ResNet50(
         include_top=False, weights='imagenet', pooling='avg', input_shape=(h, w, 3))
     # Freeze all layers
     for layer in resnet_trained.layers:
         layer.trainable = False
 
-    object_feature, object_vector = extract_object_feature(
+    # Use resnet places
+    resnet_places = models.resnet50(num_classes=365)
+    checkpoint = torch.load("agent/resnet/resnet50_places365.pth.tar",
+                            map_location=lambda storage, loc: storage)
+    state_dict = {str.replace(k, 'module.', ''): v for k,
+                  v in checkpoint['state_dict'].items()}
+    resnet_places.load_state_dict(state_dict)
+    resnet_places = torch.nn.Sequential(*list(resnet_places.children())[:-1])
+    resnet_places.eval()
+    resnet_places = resnet_places.to("cuda")
+
+    object_feature, object_vector_spacy, object_vector_visualgenome = extract_object_feature(
         resnet_trained, h, w)
+
+    custom_scene = False
+    if args['scene'] is not None:
+        names = [args['scene']]
+        custom_scene = True
+        scene_id = int(names[0].split("FloorPlan")[1])
+        scene_type = -1
+        if scene_id > 0 and scene_id < 100:
+            scene_type = 0
+        elif scene_id > 200 and scene_id < 300:
+            scene_type = 1
+        elif scene_id > 300 and scene_id < 400:
+            scene_type = 2
+        elif scene_id > 400 and scene_id < 500:
+            scene_type = 3
+    else:
+        names, scene_type = construct_scene_names()
 
     pbar_names = tqdm(names)
 
-    for name in pbar_names:
+    for idx, name in enumerate(pbar_names):
         pbar_names.set_description("%s" % name)
 
         # Eval dataset
         if args['eval']:
-            if not os.path.exists("data_eval/"):
-                os.makedirs("data_eval/")
-            h5_file = h5py.File("data_eval/" + name + '.h5', 'a')
+            if args['view']:
+                if not os.path.exists("data_eval_view/"):
+                    os.makedirs("data_eval_view/")
+                h5_file = h5py.File("data_eval_view/" + name + '.h5', 'a')
+            else:
+                if not os.path.exists("data_eval/"):
+                    os.makedirs("data_eval/")
+                h5_file = h5py.File("data_eval/" + name + '.h5', 'a')
         else:
-            if not os.path.exists("data/"):
-                os.makedirs("data/")
-            h5_file = h5py.File("data/" + name + '.h5', 'a')
+            if args['view']:
+                if not os.path.exists("data_view/"):
+                    os.makedirs("data_view/")
+                h5_file = h5py.File("data_view/" + name + '.h5', 'a')
+            else:
+                if not os.path.exists("data/"):
+                    os.makedirs("data/")
+                h5_file = h5py.File("data/" + name + '.h5', 'a')
 
         write_object_feature(h5_file,
-                             object_feature, object_vector)
+                             object_feature, object_vector_spacy, object_vector_visualgenome)
+        continue
 
         # Construct all possible states
-        states = create_states(h5_file, resnet_trained,
-                               controller, name, args)
+        if custom_scene:
+            states = create_states(h5_file, resnet_trained, resnet_places,
+                                   controller, name, args, scene_type)
+        else:
+            states = create_states(h5_file, resnet_trained, resnet_places,
+                                   controller, name, args, scene_type[idx])
 
         # Create action-state graph
         graph = create_graph(h5_file, states, controller, args)
@@ -489,7 +744,12 @@ def main():
         # Create shortest path from all state
         create_shortest_path(h5_file, states, graph)
 
+        # Extract yolo bbox
+        extract_yolobbox(h5_file)
+
         h5_file.close()
+
+        gc.collect()
 
 
 if __name__ == '__main__':
