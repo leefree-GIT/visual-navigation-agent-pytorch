@@ -73,7 +73,7 @@ def rollout(env, state):
         # check quit command
         if stop_requested:
             break
-        viewer.imshow(state.frame)
+        viewer.imshow(np.zeros((30, 30, 3), dtype=np.uint8))
 
 
 if __name__ == '__main__':
@@ -97,7 +97,7 @@ if __name__ == '__main__':
     info = False
 
     viewer = SimpleImageViewer()
-    viewer.imshow(state.frame)
+    viewer.imshow(np.zeros((30, 30, 3), dtype=np.uint8))
     viewer.window.on_key_press = key_press
 
     print("Use arrow keys to move the agent.")

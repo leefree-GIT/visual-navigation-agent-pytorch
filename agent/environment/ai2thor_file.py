@@ -85,10 +85,8 @@ class THORDiscreteEnvironment(Environment):
 
         # Load object word embedding feature
         if self.we_method is None:
-            print("Spacy")
             self.object_vector = self.h5_file['object_vector']
         else:
-            print("Visual genome")
             self.object_vector = self.h5_file['object_vector_visualgenome']
 
         # Load shortest path distance between state
@@ -151,25 +149,29 @@ class THORDiscreteEnvironment(Environment):
 
         self.mask_size = mask_size
 
-    def reset(self):
+    def reset(self, set_state=True):
         # randomize initial state
-        ks = np.arange(0, self.n_locations)
-        random.shuffle(ks)
-        k_set = False
-        while not k_set:
-            for k in ks:
-                # Assure that Z value is 0
-                if self.rotations[k][2] == 0:
-                    # Assure that shortest path is higher than 0 (not starting in final state)
-                    if self.accessible_terminal(k) and self.shortest_path_terminal(k) > 0:
-                        k_set = True
-                        break
-            if not k_set:
-                print(self.scene, 'Did not find accessible state for',
-                      self.terminal_state['object'])
-        # reset parameters
-        self.current_state_id = k
-        self.start_state_id = k
+        if set_state:
+            ks = np.arange(0, self.n_locations)
+            random.shuffle(ks)
+            k_set = False
+            k_final = None
+            while not k_set:
+                for k in ks:
+                    # Assure that Z value is 0
+                    if self.rotations[k][2] == 0:
+                        # Assure that shortest path is higher than 0 (not starting in final state)
+                        if self.accessible_terminal(k) and self.shortest_path_terminal(k) > 0:
+                            k_set = True
+                            k_final = k
+                            break
+                if not k_set:
+                    print(self.scene, 'Did not find accessible state for',
+                          self.terminal_state['object'])
+                    exit()
+            # reset parameters
+            self.current_state_id = k_final
+            self.start_state_id = k_final
         if self.method != "random":
             self.s_t = self._tiled_state(self.current_state_id)
         self.collided = False

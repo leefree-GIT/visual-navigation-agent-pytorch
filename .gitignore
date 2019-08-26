@@ -126,6 +126,17 @@ data/*
 !data/download_scene_dumps.sh
 !data/objects
 !data/objects/*
+!data/gcn
+!data/gcn/*
+
+!word2vec_visualgenome
+word2vec_visualgenome/*
+!word2vec_visualgenome/main.py
+
+!word2vec_visualgenome/visualgenome_spacy
+!word2vec_visualgenome/visualgenome_spacy/*
+
+!dataset_to_yolo.py
 
 !metric_learning
 !metric_learning/*

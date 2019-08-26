@@ -50,8 +50,7 @@ class SimilarityGrid(AbstractMethod):
         elif self.method == 'word2vec_notarget':
             state, x_processed, object_mask = self.extract_input(env, device)
 
-            (policy, value) = policy_networks(
-                (x_processed, object_mask,))
+            (policy, value) = policy_networks((x_processed, object_mask,))
         elif self.method == 'word2vec_nosimi':
             state, x_processed, goal_processed = self.extract_input(env, device)
 

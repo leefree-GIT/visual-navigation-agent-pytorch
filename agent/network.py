@@ -46,7 +46,7 @@ class DQN(nn.Module):
 
 
 class word2vec(nn.Module):
-    """word2vec network (Our method)
+    """word2vec network (Our method with word embedding as target)
     """
 
     def __init__(self, method, mask_size=5):
@@ -161,6 +161,7 @@ class word2vec_notarget(nn.Module):
         self.gradient = None
         self.gradient_vanilla = None
         self.conv_output = None
+        self.output_context = None
 
         # Observation layer
         self.fc_observation = nn.Linear(8192, 512)
@@ -196,6 +197,7 @@ class word2vec_notarget(nn.Module):
         z = self.pool(F.relu(z))
         z = self.pool(F.relu(self.conv2(z)))
         z = z.view(-1)
+        self.output_context = z
 
         # xy = torch.stack([x, y], 0).view(-1)
         xyz = torch.cat([x, z])
@@ -217,6 +219,8 @@ class baseline(nn.Module):
         self.fc_observation = nn.Linear(8192, 512)
         self.fc_merge = nn.Linear(self.word_embedding_size + 512, 512)
 
+        self.output_resnet = None
+
     def forward(self, inp):
         # x is the observation
             # y is the target
@@ -225,6 +229,7 @@ class baseline(nn.Module):
         x = x.view(-1)
         x = self.fc_observation(x)
         x = F.relu(x, True)
+        self.output_resnet = x
 
         y = y.view(-1)
         y = self.fc_target(y)
