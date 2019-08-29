@@ -147,3 +147,5 @@ word2vec_visualgenome/*
 !feature_eval.py
 !pytorchyolo3
 !eval_show_input.py
+
+!**/**/README.md

@@ -87,9 +87,12 @@ if __name__ == '__main__':
     controller = ai2thor.controller.Controller()
     controller.start(player_screen_width=1280, player_screen_height=720)
     controller.reset(args.scene_name)
+    for i in range(5):
+        state = controller.step(dict(action='InitialRandomSpawn',
+                                     randomSeed=200, forceVisible=True, maxNumRepeats=30))
     state = controller.step(
         dict(action='Initialize', gridSize=0.5, renderObjectImage=True))
-    # state = controller.step(dict(action='ToggleMapView'))
+    state = controller.step(dict(action='ToggleMapView'))
 
     human_agent_action = None
     human_wants_restart = False

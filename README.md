@@ -25,7 +25,7 @@ Each file contains:
 - **bbox** dict : `("ObjectName|3D_position": [x1,y1,x2,y2])` bounding box of object present in the view of the agent 
 - **yolo_bbox** Same as abouve but using Yolov3 to extract bounding box.
 - **object_visibility** visible object present in the current view
-- **semantic_obs** Semantic segmentation of the current view
+- **semantic_obs** 300x400x3 RGB image Semantic segmentation of the current view
 - **graph** a state-action transition graph, where `graph[i][j]` is the location id of the destination by taking action `j` in location `i`, and `-1` indicates collision while the agent stays in the same place.
 - **networkx_graph** Same graph using networkx lib
 - **object_feature** 2048-d ResNet-50 feature extracted from the objects
@@ -50,3 +50,11 @@ Methods available are:
 - **aop_we** [Active Object Perceiver](https://arxiv.org/abs/1807.11174) implementation using word embedding instead of renset feature as target
 - **target_driven** [Target driven](https://arxiv.org/abs/1609.05143) implementation
 - **gcn** [Visual Semantic Navigation using Scene Priors](https://arxiv.org/abs/1810.06543) implementation 
+
+# Yolo_dataset
+
+You can find in the `yolo_dataset` folder the cfg and weights of the pretrained network. This network was trained on the same dataset as previously. You can use the script `dataset_to_yolo.py` to create this dataset
+
+# Visual genome
+
+You can find in the `word2vec_visualgenome` folder, the pretrained word2vec model from gensim with visualgenome dataset. You can re-train it by adding `region_descriptions.json.gz` in dataset folder and running the main.py script

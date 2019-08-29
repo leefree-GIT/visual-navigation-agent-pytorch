@@ -338,7 +338,7 @@ class TrainingThread(mp.Process):
 
             # reset all env
             [env.reset() for env in self.envs]
-            while True and not self.exit.is_set() and self.optimizer.get_global_step() * self.max_t < self.init_args["total_step"]:
+            while not self.exit.is_set() and self.optimizer.get_global_step() * self.max_t < self.init_args["total_step"]:
                 # Load current task with scene
                 (scene, target) = self.tasks[idx[j]]
 
