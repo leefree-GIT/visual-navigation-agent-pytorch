@@ -608,14 +608,11 @@ def create_shortest_path(h5_file, states, graph):
         [json.dumps(json_graph.node_link_data(G), cls=NumpyEncoder)], dtype='S'))
 
 
-def extract_yolobbox(h5_file):
+def extract_yolobbox(m, h5_file):
 
     if 'yolo_bbox' not in h5_file.keys():
+        print("###### EXTRACTING YOLO #######")
         yolo_bbox = []
-        m = Darknet("yolo_dataset/yolov3_ai2thor.cfg")
-        m.load_weights("yolo_dataset/backup/yolov3_ai2thor_best.weights")
-        m.print_network()
-        m.cuda()
 
         namesfile = "yolo_dataset/obj.names"
         class_names = load_class_names(namesfile)
@@ -703,6 +700,12 @@ def main():
 
     pbar_names = tqdm(names)
 
+
+    m = Darknet("yolo_dataset/yolov3_ai2thor.cfg")
+    m.load_weights("yolo_dataset/backup/yolov3_ai2thor_best.weights")
+    m.print_network()
+    m.cuda()
+
     for idx, name in enumerate(pbar_names):
         pbar_names.set_description("%s" % name)
 
@@ -743,7 +746,7 @@ def main():
         create_shortest_path(h5_file, states, graph)
 
         # Extract yolo bbox
-        extract_yolobbox(h5_file)
+        extract_yolobbox(m, h5_file)
 
         h5_file.close()
 
