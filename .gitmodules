@@ -1,4 +1,4 @@
 [submodule "pytorchyolo3"]
 	path = pytorchyolo3
-	url = https://github.com/marvis/pytorch-yolo3.git
+	url = git@github.com:norips/pytorch-yolo3.git
 	branch = python3

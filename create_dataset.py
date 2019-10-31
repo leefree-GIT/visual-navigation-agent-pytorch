@@ -728,7 +728,6 @@ def main():
 
         write_object_feature(h5_file,
                              object_feature, object_vector_spacy, object_vector_visualgenome)
-        continue
 
         # Construct all possible states
         if custom_scene:
@@ -737,7 +736,6 @@ def main():
         else:
             states = create_states(h5_file, resnet_trained, resnet_places,
                                    controller, name, args, scene_type[idx])
-
         # Create action-state graph
         graph = create_graph(h5_file, states, controller, args)
 

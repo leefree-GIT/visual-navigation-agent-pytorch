@@ -10,6 +10,16 @@ This code is implemented in [Pytorch 1.0](https://pytorch.org/) and python 3.7. 
 
 ### Run
 
+Please install Git LFS before cloning 
+Clone the repo and download submodules:
+
+    git clone --recurse-submodules https://github.com/norips/pytorch-yolo3.git
+
+Install requirements using pip:
+
+    pip install -r requirements.txt
+    python -m spacy download en_core_web_lg
+
 Before starting evaluation or training you need to install [ai2thor](https://ai2thor.allenai.org/) framework using ``pip install ai2thor``
 
 Next you need to construct the dataset. To do so run the command:
