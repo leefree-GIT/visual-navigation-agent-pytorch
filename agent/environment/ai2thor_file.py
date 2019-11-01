@@ -333,6 +333,10 @@ class THORDiscreteEnvironment(Environment):
             y = value[1] + value[3]
             y = y/2
 
+            # Ignore unknown ObjectId
+            if keys[0] not in self.object_ids:
+                continue
+
             curr_obj_id = self.object_ids[keys[0]]
             similarity = 1 - spatial.distance.cosine(
                 self.s_target, self.object_vector[curr_obj_id])

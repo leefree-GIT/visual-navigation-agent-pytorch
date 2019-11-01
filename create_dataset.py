@@ -281,7 +281,7 @@ def create_states(h5_file, resnet_trained, resnet_places, controller, name, args
             break
         else:
             it = it + 1
-    print(it)
+    # print(it)
     # Store available objects
     available_obj = set()
     for obj in state.metadata['objects']:
@@ -289,7 +289,7 @@ def create_states(h5_file, resnet_trained, resnet_places, controller, name, args
         obj_name = objectId.split('|')[0]
         available_obj.add(obj_name)
     available_obj = list(available_obj)
-    print("Obj available", available_obj)
+    # print("Obj available", available_obj)
 
     h5_file.attrs["task_present"] = np.string_(
         json.dumps(available_obj, cls=NumpyEncoder))
@@ -611,7 +611,7 @@ def create_shortest_path(h5_file, states, graph):
 def extract_yolobbox(m, h5_file):
 
     if 'yolo_bbox' not in h5_file.keys():
-        print("###### EXTRACTING YOLO #######")
+        # print("###### EXTRACTING YOLO #######")
         yolo_bbox = []
 
         namesfile = "yolo_dataset/obj.names"
