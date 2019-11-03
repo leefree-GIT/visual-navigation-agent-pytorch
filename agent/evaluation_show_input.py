@@ -6,7 +6,7 @@ import os
 import random
 import sys
 from itertools import groupby
-
+import json 
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
@@ -29,6 +29,57 @@ from agent.training import TrainingSaver
 from agent.utils import find_restore_points, get_first_free_gpu
 from torchvision import transforms
 
+#See https://stackoverflow.com/a/42721412
+from _ctypes import PyObj_FromPtr  # see https://stackoverflow.com/a/15012814/355230
+import json
+import re
+class NoIndent(object):
+    """ Value wrapper. """
+    def __init__(self, value):
+        if not isinstance(value, (list, tuple)):
+            raise TypeError('Only lists and tuples can be wrapped')
+        self.value = value
+
+
+class MyEncoder(json.JSONEncoder):
+    FORMAT_SPEC = '@@{}@@'  # Unique string pattern of NoIndent object ids.
+    regex = re.compile(FORMAT_SPEC.format(r'(\d+)'))  # compile(r'@@(\d+)@@')
+
+    def __init__(self, **kwargs):
+        # Keyword arguments to ignore when encoding NoIndent wrapped values.
+        ignore = {'cls', 'indent'}
+
+        # Save copy of any keyword argument values needed for use here.
+        self._kwargs = {k: v for k, v in kwargs.items() if k not in ignore}
+        super(MyEncoder, self).__init__(**kwargs)
+
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return (self.FORMAT_SPEC.format(id(obj)) if isinstance(obj, NoIndent)
+                    else super(MyEncoder, self).default(obj))
+
+    def iterencode(self, obj, **kwargs):
+        format_spec = self.FORMAT_SPEC  # Local var to expedite access.
+
+        # Replace any marked-up NoIndent wrapped values in the JSON repr
+        # with the json.dumps() of the corresponding wrapped Python object.
+        for encoded in super(MyEncoder, self).iterencode(obj, **kwargs):
+            match = self.regex.search(encoded)
+            if match:
+                id = int(match.group(1))
+                no_indent = PyObj_FromPtr(id)
+                json_repr = json.dumps(no_indent.value, **self._kwargs)
+                # Replace the matched id string with json formatted representation
+                # of the corresponding Python object.
+                encoded = encoded.replace(
+                            '"{}"'.format(format_spec.format(id)), json_repr)
+
+            yield encoded
 
 def prepare_csv(file, scene_task):
     f = open(file, 'w', newline='')
@@ -166,6 +217,9 @@ class Evaluation:
         self.config = config
         self.method = config['method']
         gpu_id = get_first_free_gpu(2000)
+        if gpu_id is None:
+            print("You need at least 2Go of GPU RAM")
+            exit()
         self.device = torch.device("cuda:" + str(gpu_id))
         if self.method != "random":
             self.shared_net = SharedNetwork(
@@ -209,6 +263,103 @@ class Evaluation:
     def next_checkpoint(self):
         self.checkpoint_id = (self.checkpoint_id + 1) % len(self.checkpoints)
 
+    def save_video(self, ep_lengths, ep_actions, ep_start, ind_succ_or_fail_ep, chk_id, env, scene_scope, task_scope, success=True):
+        # Find episode based on episode length
+        if not ind_succ_or_fail_ep:
+            return
+        ep_lengths = np.array(ep_lengths)
+        sorted_ep_lengths = np.sort(ep_lengths[ind_succ_or_fail_ep])
+        ep_lengths_succeed = ep_lengths[ind_succ_or_fail_ep]
+        ep_actions_succeed = np.array(ep_actions)[ind_succ_or_fail_ep]
+        ep_start_succeed = np.array(ep_start)[ind_succ_or_fail_ep]
+
+        ind_list = []
+        names_video = []
+        if success:
+            # Best is the first episode in the sorted list but we want more than 5 step
+            index_best = 0
+            for idx, ep_len in enumerate(sorted_ep_lengths):
+                if ep_len >= 5:
+                    index_best = idx
+                    break
+            index_best = np.where(
+                ep_lengths_succeed == sorted_ep_lengths[index_best])
+            index_best = index_best[0][0]
+            # print("Best", ep_lengths_succeed[index_best])
+
+            # Worst is the last episode in the sorted list
+            index_worst = np.where(
+                ep_lengths_succeed == sorted_ep_lengths[-1])
+            index_worst = index_worst[0][0]
+            # print("Worst", ep_lengths_succeed[index_worst])
+
+            # Median is half the array size
+            index_median = np.where(
+                ep_lengths_succeed == sorted_ep_lengths[len(sorted_ep_lengths)//2])
+            # Extract index
+            index_median = index_median[0][0]
+            # print("Median", ep_lengths_succeed[index_median])
+
+            names_video = ['best', 'median', 'worst']
+            ind_list = [index_best, index_median, index_worst]
+        else:
+            ind_list = [i for i in range(len(ind_succ_or_fail_ep))]
+            names_video = ['Fail_' + str(i) for i in range(len(ind_succ_or_fail_ep))]
+
+        # Create dir if not exisiting
+        directory = os.path.join(
+            self.config['base_path'], 'video', str(chk_id))
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        for idx_name, idx in enumerate(ind_list):
+            # Create video to save
+            height, width, layers = 720, 1280, 3
+            filename = os.path.join(directory, scene_scope + '_' +
+                                        task_scope['object'] + '_' +
+                                        names_video[idx_name] + '_' +
+                                        str(ep_lengths_succeed[idx]))
+            video_name = os.path.join(filename + '.avi')
+            text_name = os.path.join(filename + '.json')
+            FPS = 5
+            video = cv2.VideoWriter(
+                video_name, cv2.VideoWriter_fourcc(*"MJPG"), FPS, (width, height))
+            # Retrieve start position
+            state_id_best = ep_start_succeed[idx]
+            env.reset()
+
+            # Set start position
+            env.current_state_id = state_id_best
+            for a in ep_actions_succeed[idx]:
+                state, x_processed, object_mask = self.method_class.extract_input(
+                    env, torch.device("cpu"))
+                x_processed = x_processed.view(-1, 1).numpy()
+                object_mask = object_mask.squeeze().unsqueeze(2).numpy()
+                object_mask = np.flip(np.rot90(object_mask), axis=0)
+                img = create_img(task_scope['object'], env.observation, x_processed,
+                                    np.zeros((300, 1)), object_mask)
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                video.write(img)
+                env.step(a)
+            for i in range(10):
+                video.write(img)
+            video.release()
+
+            data = {}
+            data['start'] = ep_start_succeed[idx]
+            data['stop'] = env.current_state_id
+            data['action'] = [env.acts[i] for i in ep_actions_succeed[idx]]
+            data['object_visible'] = [k.split("|")[0] for k in env.boudingbox.keys()]
+            round_mask = np.squeeze(np.around(object_mask,2)).tolist()
+
+            def fmt(v):
+                return "%.2f" % (v,)
+            vecfmt = np.vectorize(fmt)
+
+            data['object_mask'] = [NoIndent(e) for e in vecfmt(round_mask).tolist()]
+
+            with open(text_name, 'w') as outfile:
+                json.dump(data, outfile, cls=MyEncoder, sort_keys=True, indent=4)
+
     def run(self, show=False):
         self.method_class = None
         # Load policy network
@@ -243,6 +394,8 @@ class Evaluation:
                 scene_stats[scene_scope]["success"] = list()
                 scene_stats[scene_scope]["spl_long"] = list()
                 scene_stats[scene_scope]["success_long"] = list()
+                scene_stats[scene_scope]["failure_lost"] = list()
+                
 
                 for task_scope in items:
 
@@ -266,6 +419,8 @@ class Evaluation:
                     ep_shortest_distance = []
                     embedding_vectors = []
                     state_ids = list()
+
+                    ep_fail_threshold = 300
                     for i_episode in range(self.config['num_episode']):
                         env.reset()
                         terminal = False
@@ -292,7 +447,7 @@ class Evaluation:
                             ep_reward += env.reward
                             terminal = env.terminal
 
-                            if ep_t == 300:
+                            if ep_t == ep_fail_threshold:
                                 break
                             if env.collided:
                                 ep_collision += 1
@@ -316,13 +471,14 @@ class Evaluation:
                             else:
                                 ep_success.append(False)
 
-                        elif ep_t <= 500:
+                        elif ep_t < ep_fail_threshold:
                             ep_success.append(True)
                         else:
                             ep_success.append(False)
                         print("episode #{} ends after {} steps".format(
                             i_episode, ep_t))
 
+                    ## Save succeed episode
                     # Get indice of succeed episodes
                     ind_succeed_ep = [
                         i for (i, ep_suc) in enumerate(ep_success) if ep_suc]
@@ -341,8 +497,8 @@ class Evaluation:
                           np.mean(ep_collisions[ind_succeed_ep]))
                     ep_success_percent = (
                         (len(ind_succeed_ep) / self.config['num_episode']) * 100)
-                    print('episode success: %.2f%%' %
-                          ep_success_percent)
+                    print('episode success: %.2f%% (%d / %d)' %
+                          (ep_success_percent, len(ind_succeed_ep), self.config['num_episode']))
 
                     ep_spl_mean = np.sum(ep_spl[ind_succeed_ep]) / self.config['num_episode']
                     print('episode SPL: %.3f' % ep_spl_mean)
@@ -366,7 +522,6 @@ class Evaluation:
                     ep_spl_long_mean = np.sum(ep_spl[ind_succeed_far_start]) / nb_long_episode
                     print('episode SPL > 5: %.3f' % ep_spl_long_mean)
                     print('nb episode > 5: %d' % nb_long_episode)
-                    print('')
 
                     scene_stats[scene_scope]["length"].extend(
                         ep_lengths[ind_succeed_ep])
@@ -385,84 +540,60 @@ class Evaluation:
                     # Show best episode from evaluation
                     # We will print the best (lowest step), median, and worst
                     if show:
-                        # Find episode based on episode length
-                        sorted_ep_lengths = np.sort(ep_lengths[ind_succeed_ep])
-                        ep_lengths_succeed = ep_lengths[ind_succeed_ep]
-                        ep_actions_succeed = np.array(ep_actions)[ind_succeed_ep]
-                        ep_start_succeed = np.array(ep_start)[ind_succeed_ep]
+                        self.save_video(ep_lengths, ep_actions, ep_start, ind_succeed_ep, chk_id, env, scene_scope, task_scope)
+                    
+                    # Save failed episode
+                    ind_failed_ep = [
+                        i for (i, ep_suc) in enumerate(ep_success) if not ep_suc]
+                    ep_rewards = np.array(ep_rewards)
+                    ep_lengths = np.array(ep_lengths)
+                    ep_collisions = np.array(ep_collisions)
+                    ep_spl = np.array(ep_spl)
+                    ep_start = np.array(ep_start)
 
-                        # Best is the first episode in the sorted list but we want more than 10 step
-                        index_best = 0
-                        for idx, ep_len in enumerate(sorted_ep_lengths):
-                            if ep_len >= 5:
-                                index_best = idx
-                                break
-                        index_best = np.where(
-                            ep_lengths_succeed == sorted_ep_lengths[index_best])
-                        index_best = index_best[0][0]
-                        print("Best", ep_lengths_succeed[index_best])
+                    ep_start_failed = ep_start[ind_failed_ep]
+                    ep_lengths_failed = ep_lengths[ind_failed_ep]
 
-                        # Worst is the last episode in the sorted list
-                        index_worst = np.where(
-                            ep_lengths_succeed == sorted_ep_lengths[-1])
-                        index_worst = index_worst[0][0]
-                        print("Worst", ep_lengths_succeed[index_worst])
+                    nb_fail = 5
+                    # Get random fail
+                    ep_failed_selec = ind_failed_ep
+                    if len(ep_failed_selec) > 5:
+                        ep_failed_selec = random.sample(ind_failed_ep, nb_fail)
+                    
 
-                        # Median is half the array size
-                        index_median = np.where(
-                            ep_lengths_succeed == sorted_ep_lengths[len(sorted_ep_lengths)//2])
-                        # Extract index
-                        index_median = index_median[0][0]
-                        print("Median", ep_lengths_succeed[index_median])
+                    print('episode failure: %.2f%% (%d / %d)' % (
+                          100-ep_success_percent, self.config['num_episode']-len(ind_succeed_ep), self.config['num_episode']))
+                    
+                    # Count number of fail with 300 step
+                    ep_fail = len(ind_failed_ep)
+                        
+                    if ep_fail == 0:
+                        ep_fail_lost = np.nan
+                    else:
+                        ep_fail_lost = (np.count_nonzero(ep_lengths[ind_failed_ep] == ep_fail_threshold)/ep_fail)*100
+                        print('episode failure lost %d%%' % (ep_fail_lost))
+                        print('episode failure done %d%%' % (100-ep_fail_lost))
 
-                        names_video = ['best', 'median', 'worst']
+                    scene_stats[scene_scope]["failure_lost"].append(
+                        ep_fail_lost)
 
-                        # Create dir if not exisiting
-                        directory = os.path.join(
-                            self.config['base_path'], 'video', str(chk_id))
-                        if not os.path.exists(directory):
-                            os.makedirs(directory)
-                        for idx_name, idx in enumerate([index_best, index_median, index_worst]):
-                            # Create video to save
-                            height, width, layers = 720, 1280, 3
-                            video_name = os.path.join(directory, scene_scope + '_' +
-                                                      task_scope['object'] + '_' +
-                                                      names_video[idx_name] + '_' +
-                                                      str(ep_lengths_succeed[idx]) + '.avi')
-                            FPS = 5
-                            video = cv2.VideoWriter(
-                                video_name, cv2.VideoWriter_fourcc(*"MJPG"), FPS, (width, height))
-                            # Retrieve start position
-                            state_id_best = ep_start_succeed[idx]
-                            env.reset()
-
-                            # Set start position
-                            env.current_state_id = state_id_best
-                            for a in ep_actions_succeed[idx]:
-                                state, x_processed, object_mask = self.method_class.extract_input(
-                                    env, torch.device("cpu"))
-                                x_processed = x_processed.view(-1, 1).numpy()
-                                object_mask = object_mask.squeeze().unsqueeze(2).numpy()
-                                object_mask = np.flip(np.rot90(object_mask), axis=0)
-                                img = create_img(task_scope['object'], env.observation, x_processed,
-                                                 np.zeros((300, 1)), object_mask)
-                                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                                video.write(img)
-                                env.step(a)
-                            for i in range(10):
-                                video.write(img)
-                            video.release()
+                    print('')
+                    # Show failed
+                    if show:
+                        self.save_video(ep_lengths, ep_actions, ep_start, ep_failed_selec, chk_id, env, scene_scope, task_scope, success=False)
 
             print('\nResults (average trajectory length):')
             for scene_scope in scene_stats:
-                print('%s: %.2f steps | %.3f spl | %.2f%% success | %.3f spl > 5 | %.2f%% success > 5' %
+                print('%s: %.2f steps | %.3f spl | %.2f%% success | %.3f spl > 5 | %.2f%% success > 5 | %.2f%% lost' %
                       (scene_scope, np.mean(scene_stats[scene_scope]["length"]), np.mean(
                           scene_stats[scene_scope]["spl"]), np.mean(
                           scene_stats[scene_scope]["success"]),
                        np.mean(
                           scene_stats[scene_scope]["spl_long"]),
                        np.mean(
-                          scene_stats[scene_scope]["success_long"])))
+                          scene_stats[scene_scope]["success_long"]),
+                       np.nanmean(
+                          scene_stats[scene_scope]["failure_lost"])))
             break
 
 
