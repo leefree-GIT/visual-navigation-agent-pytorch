@@ -211,6 +211,23 @@ def create_img(target, obs, obs_feature, word_embedding, simi_grid):
 
     return base_img
 
+class Logger(object):
+    def __init__(self, path="logfile.log"):
+        self.terminal = sys.stdout
+        self.log = open(path, "w")
+
+    def write(self, message, term='\n'):
+        self.terminal.write(message + term)
+        self.log.write(message + term)
+
+    def flush(self):
+        # this flush method is needed for python 3 compatibility.
+        # this handles the flush command by doing nothing.
+        # you might want to specify some extra behavior here.
+        pass
+
+    def __del__(self):
+        self.log.close()
 
 class Evaluation:
     def __init__(self, config):
@@ -377,6 +394,12 @@ class Evaluation:
 
         for chk_id in self.chk_numbers:
             resultData = [chk_id]
+            if self.config['train']:
+                log = Logger(self.config['base_path'] + 'train' +
+                             str(chk_id) + '.log')
+            else:
+                log = Logger(self.config['base_path'] + 'eval' +
+                             str(chk_id) + '.log')
             scene_stats = dict()
             if self.method != "random":
                 self.restore()
@@ -475,7 +498,7 @@ class Evaluation:
                             ep_success.append(True)
                         else:
                             ep_success.append(False)
-                        print("episode #{} ends after {} steps".format(
+                        log.write("episode #{} ends after {} steps".format(
                             i_episode, ep_t))
 
                     ## Save succeed episode
@@ -488,20 +511,20 @@ class Evaluation:
                     ep_spl = np.array(ep_spl)
                     ep_start = np.array(ep_start)
 
-                    print('evaluation: %s %s' % (scene_scope, task_scope))
-                    print('mean episode reward: %.2f' %
+                    log.write('evaluation: %s %s' % (scene_scope, task_scope))
+                    log.write('mean episode reward: %.2f' %
                           np.mean(ep_rewards[ind_succeed_ep]))
-                    print('mean episode length: %.2f' %
+                    log.write('mean episode length: %.2f' %
                           np.mean(ep_lengths[ind_succeed_ep]))
-                    print('mean episode collision: %.2f' %
+                    log.write('mean episode collision: %.2f' %
                           np.mean(ep_collisions[ind_succeed_ep]))
                     ep_success_percent = (
                         (len(ind_succeed_ep) / self.config['num_episode']) * 100)
-                    print('episode success: %.2f%% (%d / %d)' %
+                    log.write('episode success: %.2f%% (%d / %d)' %
                           (ep_success_percent, len(ind_succeed_ep), self.config['num_episode']))
 
                     ep_spl_mean = np.sum(ep_spl[ind_succeed_ep]) / self.config['num_episode']
-                    print('episode SPL: %.3f' % ep_spl_mean)
+                    log.write('episode SPL: %.3f' % ep_spl_mean)
 
                     # Stat on long path
                     ind_succeed_far_start = []
@@ -517,11 +540,11 @@ class Evaluation:
                         nb_long_episode = 1
                     ep_success_long_percent = (
                         (len(ind_succeed_far_start) / nb_long_episode) * 100)
-                    print('episode > 5 success: %.2f%%' %
+                    log.write('episode > 5 success: %.2f%%' %
                           ep_success_long_percent)
                     ep_spl_long_mean = np.sum(ep_spl[ind_succeed_far_start]) / nb_long_episode
-                    print('episode SPL > 5: %.3f' % ep_spl_long_mean)
-                    print('nb episode > 5: %d' % nb_long_episode)
+                    log.write('episode SPL > 5: %.3f' % ep_spl_long_mean)
+                    log.write('nb episode > 5: %d' % nb_long_episode)
 
                     scene_stats[scene_scope]["length"].extend(
                         ep_lengths[ind_succeed_ep])
@@ -538,7 +561,7 @@ class Evaluation:
                     resultData = np.hstack((resultData, tmpData))
 
                     # Show best episode from evaluation
-                    # We will print the best (lowest step), median, and worst
+                    # We will log.write the best (lowest step), median, and worst
                     if show:
                         self.save_video(ep_lengths, ep_actions, ep_start, ind_succeed_ep, chk_id, env, scene_scope, task_scope)
                     
@@ -550,41 +573,58 @@ class Evaluation:
                     ep_collisions = np.array(ep_collisions)
                     ep_spl = np.array(ep_spl)
                     ep_start = np.array(ep_start)
-
-                    ep_start_failed = ep_start[ind_failed_ep]
-                    ep_lengths_failed = ep_lengths[ind_failed_ep]
-
-                    nb_fail = 5
-                    # Get random fail
-                    ep_failed_selec = ind_failed_ep
-                    if len(ep_failed_selec) > 5:
-                        ep_failed_selec = random.sample(ind_failed_ep, nb_fail)
-                    
-
-                    print('episode failure: %.2f%% (%d / %d)' % (
+                
+                    log.write('episode failure: %.2f%% (%d / %d)' % (
                           100-ep_success_percent, self.config['num_episode']-len(ind_succeed_ep), self.config['num_episode']))
                     
-                    # Count number of fail with 300 step
                     ep_fail = len(ind_failed_ep)
                         
                     if ep_fail == 0:
                         ep_fail_lost = np.nan
                     else:
+                        # Count number of fail with 300 step
                         ep_fail_lost = (np.count_nonzero(ep_lengths[ind_failed_ep] == ep_fail_threshold)/ep_fail)*100
-                        print('episode failure lost %d%%' % (ep_fail_lost))
-                        print('episode failure done %d%%' % (100-ep_fail_lost))
+                        log.write('episode failure lost %d%%' % (ep_fail_lost))
+                        log.write('episode failure done %d%%' % (100-ep_fail_lost))
 
                     scene_stats[scene_scope]["failure_lost"].append(
                         ep_fail_lost)
 
-                    print('')
+                    log.write('')
                     # Show failed
                     if show:
+                        # Set number of fail to save
+                        nb_fail = 5
+
+                        # Get indice of lost agent
+                        ind_lost = []
+                        for ind, e in enumerate(ep_lengths):
+                            if ind in ind_failed_ep and e == ep_fail_threshold:
+                                ind_lost.append(ind)
+                        
+                        # Get indice of wrong done
+                        ind_done = []
+                        for ind, e in enumerate(ep_lengths):
+                            if ind in ind_failed_ep and e != ep_fail_threshold:
+                                ind_done.append(ind)
+                        
+                        # Get random 5 lost
+                        ep_failed_selec = ind_lost
+                        if len(ep_failed_selec) > nb_fail:
+                            ep_failed_selec = random.sample(ind_lost, nb_fail)
+
+                        self.save_video(ep_lengths, ep_actions, ep_start, ep_failed_selec, chk_id, env, scene_scope, task_scope, success=False)
+                        
+                        # Get random 5 done
+                        ep_failed_selec = ind_done
+                        if len(ep_failed_selec) > nb_fail:
+                            ep_failed_selec = random.sample(ind_done, nb_fail)
+
                         self.save_video(ep_lengths, ep_actions, ep_start, ep_failed_selec, chk_id, env, scene_scope, task_scope, success=False)
 
-            print('\nResults (average trajectory length):')
+            log.write('\nResults (average trajectory length):')
             for scene_scope in scene_stats:
-                print('%s: %.2f steps | %.3f spl | %.2f%% success | %.3f spl > 5 | %.2f%% success > 5 | %.2f%% lost' %
+                log.write('%s: %.2f steps | %.3f spl | %.2f%% success | %.3f spl > 5 | %.2f%% success > 5 | %.2f%% lost' %
                       (scene_scope, np.mean(scene_stats[scene_scope]["length"]), np.mean(
                           scene_stats[scene_scope]["spl"]), np.mean(
                           scene_stats[scene_scope]["success"]),

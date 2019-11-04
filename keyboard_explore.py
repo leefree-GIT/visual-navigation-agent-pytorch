@@ -79,9 +79,6 @@ def rollout(env):
             # print(env.get_state.instance_detections2D)
             for bbox in env.boudingbox.keys():
                 print(bbox.split('|')[0])
-            obj_visible = [obj['objectId']
-                           for obj in state.metadata['objects'] if obj['visible']]
-            print(obj_visible)
             info = False
         # check quit command
         if stop_requested:

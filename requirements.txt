@@ -1,5 +1,5 @@
 matplotlib
-ai2thor
+ai2thor==2.0.0
 Cython
 scikit-image
 h5py

@@ -308,7 +308,7 @@ def create_states(h5_file, resnet_trained, resnet_places, controller, name, args
         'rotation' not in h5_file.keys() or \
         'bbox' not in h5_file.keys() or \
             ('semantic_obs' not in h5_file.keys() and not args['view']):
-        for pos in tqdm(reachable_pos, desc="Feature extraction"):
+        for pos in tqdm(reachable_pos, desc="Feature extraction", position=1):
             state = controller.step(dict(action='Teleport', **pos))
             # Normal/Up/Down view
             for i in range(3):
@@ -448,7 +448,7 @@ def create_graph(h5_file, states, controller, args):
         dict(action='Initialize', gridSize=grid_size, renderObjectImage=False))
     # Populate graph
     if args['force'] or 'graph' not in h5_file.keys():
-        for state in tqdm(states, desc="Graph construction"):
+        for state in tqdm(states, desc="Graph construction", position=1):
             for i, a in enumerate(actions):
                 controller.step(dict(action='TeleportFull', **state.pos,
                                      rotation=state.rot['y'], horizon=state.rot['z']))
@@ -698,7 +698,7 @@ def main():
     else:
         names, scene_type = construct_scene_names()
 
-    pbar_names = tqdm(names)
+    pbar_names = tqdm(names, position=0)
 
 
     m = Darknet("yolo_dataset/yolov3_ai2thor.cfg")
