@@ -8,6 +8,17 @@ This repocitory provides a PyTorch implementation of the paper **Visual Object S
 ## Setup and run
 This code is implemented in [Pytorch 1.0](https://pytorch.org/) and python 3.7. It uses [Docker](http://docker.com/) to automate instalation process. In order to run this code, you can either run the docker or install the requirements using pip.
 
+### Docker
+To use docker please install [docker](https://docs.docker.com/install/), [docker-compose](https://docs.docker.com/compose/install/) and [nvidia-docker2](https://github.com/NVIDIA/nvidia-docker#upgrading-with-nvidia-docker2-deprecated).
+
+Set experiment in `.env` file e.g :
+
+    EXPERIMENT=experiment_folder
+
+To train 
+
+    docker-compose run train
+
 ### Run
 
 Please install Git LFS before cloning 
