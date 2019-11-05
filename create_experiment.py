@@ -8,7 +8,8 @@ import spacy
 from scipy import spatial
 
 names = []
-SCENES = [0, 200, 300, 400]
+SCENES_TRAINING = [0, 200, 300, 400]
+SCENES_EVAL = [0, 200, 300, 400]
 TRAIN_SPLIT = (1, 12)
 TEST_SPLIT = (22, 27)
 
@@ -112,7 +113,7 @@ if __name__ == '__main__':
 
     training = {}
     set_obj = None
-    for idx_scene, scene in enumerate(SCENES):
+    for idx_scene, scene in enumerate(SCENES_TRAINING):
         for t in range(*args['train_range']):
             name = "FloorPlan" + str(scene + t)
             f = h5py.File("data/"+name+".h5", 'r')
@@ -151,7 +152,7 @@ if __name__ == '__main__':
     evaluation = {}
 
     evaluation_set = dict()
-    for idx_scene, scene in enumerate(SCENES):
+    for idx_scene, scene in enumerate(SCENES_EVAL):
         evaluation_set[scene] = list()
         for t in range(*args['eval_range']):
             name = "FloorPlan" + str(scene + t)
