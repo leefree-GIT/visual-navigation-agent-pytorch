@@ -31,8 +31,6 @@ Install requirements using pip:
     pip install -r requirements.txt
     python -m spacy download en_core_web_lg
 
-Before starting evaluation or training you need to install [ai2thor](https://ai2thor.allenai.org/) framework using ``pip install ai2thor``
-
 Next you need to construct the dataset. To do so run the command:
     
     python create_dataset.py
