@@ -24,7 +24,7 @@ To train
 Please install Git LFS before cloning 
 Clone the repo and download submodules:
 
-    git clone --recurse-submodules https://github.com/norips/pytorch-yolo3.git
+    git clone --recurse-submodules https://github.com/norips/visual-navigation-agent-pytorch.git
 
 Install requirements using pip:
 
