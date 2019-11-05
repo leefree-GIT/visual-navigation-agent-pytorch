@@ -42,7 +42,7 @@ def key_press(key, mod):
         info = True
 
 
-def rollout(env, state):
+def rollout(env, state, scene_name):
 
     global human_agent_action, human_wants_restart, stop_requested, info
     human_agent_action = None
@@ -58,7 +58,12 @@ def rollout(env, state):
         # waiting for reset command
         if human_wants_restart:
             # reset agent to random location
-            env.reset()
+            # env.reset(scene_name)
+            import time
+            env.step(dict(action='Initialize', gridSize=0.25))
+            env.step(dict(action='InitialRandomSpawn',
+                                     randomSeed=time.time(), forceVisible=False, maxNumRepeats=30))
+            
             human_wants_restart = False
         if info:
             # print(env.get_state.instance_detections2D)
@@ -85,14 +90,14 @@ if __name__ == '__main__':
 
     print("Loading scene dump {}".format(args.scene_name))
     controller = ai2thor.controller.Controller()
-    controller.start(player_screen_width=1280, player_screen_height=720)
+    controller.start(player_screen_width=400, player_screen_height=300)
     controller.reset(args.scene_name)
     for i in range(5):
         state = controller.step(dict(action='InitialRandomSpawn',
                                      randomSeed=200, forceVisible=True, maxNumRepeats=30))
     state = controller.step(
         dict(action='Initialize', gridSize=0.5, renderObjectImage=True))
-    state = controller.step(dict(action='ToggleMapView'))
+    # state = controller.step(dict(action='ToggleMapView'))
 
     human_agent_action = None
     human_wants_restart = False
@@ -107,6 +112,6 @@ if __name__ == '__main__':
     print("Press R to reset agent\'s location.")
     print("Press Q to quit.")
 
-    rollout(controller, state)
+    rollout(controller, state, args.scene_name)
 
     print("Goodbye.")
