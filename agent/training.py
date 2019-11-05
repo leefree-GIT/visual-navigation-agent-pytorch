@@ -71,6 +71,9 @@ class TrainingSaver:
         from collections import OrderedDict
         new_state_dict = OrderedDict()
         for key, value in state['navigation'].items():
+            if "net." in key:
+                new_state_dict = state['navigation']
+                break
             new_state_dict['net.'+key] = value
         self.shared_network.load_state_dict(new_state_dict)
 

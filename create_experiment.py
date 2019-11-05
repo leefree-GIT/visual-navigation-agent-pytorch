@@ -7,10 +7,16 @@ import numpy as np
 import spacy
 from scipy import spatial
 
+KITCHEN_ID = 0
+LIVINGROOM_ID = 200
+BEDROOM_ID = 300
+BATHROOM_ID = 400
+
 names = []
-SCENES_TRAINING = [0, 200, 300, 400]
-SCENES_EVAL = [0, 200, 300, 400]
-TRAIN_SPLIT = (1, 12)
+SCENES_TRAINING = [KITCHEN_ID, BEDROOM_ID]
+SCENES_EVAL = [LIVINGROOM_ID, BATHROOM_ID]
+
+TRAIN_SPLIT = (1, 11)
 TEST_SPLIT = (22, 27)
 
 
@@ -85,12 +91,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='Create param.json experiment file')
     parser.add_argument('--train_range', nargs=2, default=TRAIN_SPLIT,
-                        help='train scene range Ex : 1 12')
+                        help='train scene range Ex : 1 11')
 
     parser.add_argument('--eval_range', nargs=2, default=TEST_SPLIT,
                         help='train scene range Ex : 22 27')
-    parser.add_argument('--method', type=str, default="word2vec",
-                        help='Method to use Ex : word2vec')
+    parser.add_argument('--method', type=str, default="word2vec_notarget",
+                        help='Method to use Ex : word2vec_notarget')
     parser.add_argument('--reward', type=str, default="soft_goal",
                         help='Method to use Ex : soft_goal')
 
@@ -108,8 +114,10 @@ if __name__ == '__main__':
     args["eval_range"] = str_range
     data = {}
 
-    scene_tasks = [KITCHEN_OBJECT_CLASS_LIST_TRAIN, LIVING_ROOM_OBJECT_CLASS_LIST_TRAIN,
-                   BEDROOM_OBJECT_CLASS_LIST_TRAIN, BATHROOM_OBJECT_CLASS_LIST_TRAIN]
+    scene_tasks = { KITCHEN_ID: KITCHEN_OBJECT_CLASS_LIST_TRAIN, 
+                    LIVINGROOM_ID: LIVING_ROOM_OBJECT_CLASS_LIST_TRAIN,
+                    BEDROOM_ID: BEDROOM_OBJECT_CLASS_LIST_TRAIN,
+                    BATHROOM_ID: BATHROOM_OBJECT_CLASS_LIST_TRAIN}
 
     training = {}
     set_obj = None
@@ -121,7 +129,7 @@ if __name__ == '__main__':
             obj_available = json.loads(f.attrs["task_present"])
 
             obj_available = np.array(list(set.intersection(
-                set(obj_available), set(scene_tasks[idx_scene]))))
+                set(obj_available), set(scene_tasks[scene]))))
             obj_available = np.array(obj_available)
             obj_available_mask = [False for i in obj_available]
             obj_available_mask = np.array(obj_available_mask)
@@ -146,8 +154,10 @@ if __name__ == '__main__':
                               for obj in obj_available[obj_available_mask == True]]
 
     if args['eval_objects']:
-        scene_tasks = [KITCHEN_OBJECT_CLASS_LIST_EVAL, LIVING_ROOM_OBJECT_CLASS_LIST_EVAL,
-                       BEDROOM_OBJECT_CLASS_LIST_EVAL, BATHROOM_OBJECT_CLASS_LIST_EVAL]
+        scene_tasks = { KITCHEN_ID: KITCHEN_OBJECT_CLASS_LIST_EVAL, 
+                    LIVINGROOM_ID: LIVING_ROOM_OBJECT_CLASS_LIST_EVAL,
+                    BEDROOM_ID: BEDROOM_OBJECT_CLASS_LIST_EVAL,
+                    BATHROOM_ID: BATHROOM_OBJECT_CLASS_LIST_EVAL}
 
     evaluation = {}
 
@@ -157,7 +167,7 @@ if __name__ == '__main__':
         for t in range(*args['eval_range']):
             name = "FloorPlan" + str(scene + t)
             evaluation[name] = [
-                {"object": obj} for obj in scene_tasks[idx_scene]]
+                {"object": obj} for obj in scene_tasks[scene]]
     data["task_list"] = {}
     data["task_list"]["train"] = training
     data["task_list"]["eval"] = evaluation
@@ -177,7 +187,7 @@ if __name__ == '__main__':
 
     data["train_param"] = train_param
     data["eval_param"] = {}
-    data["eval_param"]["num_episode"] = 20
+    data["eval_param"]["num_episode"] = 250
     data["method"] = args["method"]
 
     with open('param.json', 'w') as outfile:
