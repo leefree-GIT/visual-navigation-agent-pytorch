@@ -527,7 +527,7 @@
         "mask_size": 16
     },
     "eval_param": {
-        "num_episode": 1
+        "num_episode": 250
     },
     "method": "word2vec_notarget"
 }
