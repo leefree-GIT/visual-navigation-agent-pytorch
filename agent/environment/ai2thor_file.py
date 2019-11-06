@@ -168,7 +168,7 @@ class THORDiscreteEnvironment(Environment):
                 if not k_set:
                     print(self.scene, 'Did not find accessible state for',
                           self.terminal_state['object'])
-                    exit()
+                    return False
             # reset parameters
             self.current_state_id = k_final
             self.start_state_id = k_final
@@ -180,6 +180,7 @@ class THORDiscreteEnvironment(Environment):
         self.max_bbox_area = 0
         self.time = 0
         self.success = False
+        return True
 
     def step(self, action):
         assert not self.terminal, 'step() called in terminal state'

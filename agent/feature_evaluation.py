@@ -118,7 +118,8 @@ class FeatureEvaluation:
                                                           'mask_size', 5))
                     print("Current task:", env.terminal_state['object'])
                     for i_episode in range(num_episode_eval):
-                        env.reset()
+                        if not env.reset():
+                            continue
                         ep_t = 0
                         terminal = False
                         while not terminal:

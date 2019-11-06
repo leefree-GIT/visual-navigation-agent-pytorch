@@ -445,7 +445,8 @@ class Evaluation:
 
                     ep_fail_threshold = 300
                     for i_episode in range(self.config['num_episode']):
-                        env.reset()
+                        if not env.reset():
+                            continue
                         terminal = False
                         ep_reward = 0
                         ep_collision = 0
