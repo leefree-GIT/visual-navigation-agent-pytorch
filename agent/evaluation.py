@@ -418,6 +418,7 @@ class Evaluation:
                 scene_stats[scene_scope]["spl_long"] = list()
                 scene_stats[scene_scope]["success_long"] = list()
                 scene_stats[scene_scope]["failure_lost"] = list()
+                scene_stats[scene_scope]["failure_done_visible"] = list()
                 
 
                 for task_scope in items:
@@ -584,12 +585,32 @@ class Evaluation:
                         ep_fail_lost = np.nan
                     else:
                         # Count number of fail with 300 step
-                        ep_fail_lost = (np.count_nonzero(ep_lengths[ind_failed_ep] == ep_fail_threshold)/ep_fail)*100
+                        ep_fail_lost = (np.count_nonzero(ep_lengths[ind_failed_ep] == ep_fail_threshold)/ep_fail)*100.0
                         log.write('episode failure lost %d%%' % (ep_fail_lost))
                         log.write('episode failure done %d%%' % (100-ep_fail_lost))
 
                     scene_stats[scene_scope]["failure_lost"].append(
                         ep_fail_lost)
+
+                    ind_done = []
+                    for ind, e in enumerate(ep_lengths):
+                        if ind in ind_failed_ep and e != ep_fail_threshold:
+                            ind_done.append(ind)
+                    
+                    ep_done_visible = 0
+                    for i in ind_done:
+                        env.reset()
+                        # Set start position
+                        env.current_state_id = ep_start[i]
+                        for a in ep_actions[i]:
+                            env.step(a)
+                        objects = [k.split("|")[0] for k in env.boudingbox.keys()]
+                        if task_scope['object'] in objects:
+                            ep_done_visible += 1
+                    if ind_done:
+                        ep_done_visible = (ep_done_visible / len(ind_done))*100.0                    
+                    log.write('episode failure done visible %d%%' % (ep_done_visible))
+                    scene_stats[scene_scope]['failure_done_visible'].append(ep_done_visible)
 
                     log.write('')
                     # Show failed
@@ -625,7 +646,7 @@ class Evaluation:
 
             log.write('\nResults (average trajectory length):')
             for scene_scope in scene_stats:
-                log.write('%s: %.2f steps | %.3f spl | %.2f%% success | %.3f spl > 5 | %.2f%% success > 5 | %.2f%% lost' %
+                log.write('%s: %.2f steps | %.3f spl | %.2f%% success | %.3f spl > 5 | %.2f%% success > 5 | %.2f%% lost | %.2f%% done visible' %
                       (scene_scope, np.mean(scene_stats[scene_scope]["length"]), np.mean(
                           scene_stats[scene_scope]["spl"]), np.mean(
                           scene_stats[scene_scope]["success"]),
@@ -634,7 +655,9 @@ class Evaluation:
                        np.mean(
                           scene_stats[scene_scope]["success_long"]),
                        np.nanmean(
-                          scene_stats[scene_scope]["failure_lost"])))
+                          scene_stats[scene_scope]["failure_lost"]),
+                       np.nanmean(
+                          scene_stats[scene_scope]["failure_done_visible"])))
             break
 
 

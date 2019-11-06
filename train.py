@@ -8,6 +8,7 @@ from agent.training import Training
 from agent.utils import populate_config
 
 if __name__ == '__main__':
+    print('Version 1.0')
     torch.set_num_threads(1)
     print(torch.get_num_threads())
     mp.set_start_method('spawn')
