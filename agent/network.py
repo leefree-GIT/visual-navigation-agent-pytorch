@@ -206,6 +206,64 @@ class word2vec_notarget(nn.Module):
         return xyz
 
 
+class word2vec_notarget_lstm(nn.Module):
+    """Our method network with LSTM without target word embedding 
+    """
+
+    def __init__(self, method, mask_size=5):
+        super(word2vec_notarget_lstm, self).__init__()
+
+        self.gradient = None
+        self.gradient_vanilla = None
+        self.conv_output = None
+        self.output_context = None
+        self.lstm_hidden = None
+
+        # Observation layer, use only last RGB frame
+        self.fc_observation = nn.Linear(2048, 512)
+
+        # Convolution for similarity grid
+        pooling_kernel = 2
+        self.conv1 = nn.Conv2d(1, 8, 3, stride=1)
+        self.pool = nn.MaxPool2d(pooling_kernel, pooling_kernel)
+        self.conv2 = nn.Conv2d(8, 16, 5, stride=1)
+
+        conv1_output = (mask_size - 3 + 1)//pooling_kernel
+        conv2_output = (conv1_output - 5 + 1)//pooling_kernel
+        self.flat_input = 16 * conv2_output * conv2_output
+
+        # Merge layer
+        self.fc_merge = nn.Linear(
+            512+self.flat_input, 512)
+
+        # LSTM for merge layer
+        self.lstm = nn.LSTMCell(512, 512)
+
+    def forward(self, inp):
+        # x is the observation
+        # z is the object location mask
+        (x, z, hidden) = inp
+
+        x = x.view(-1)
+        x = self.fc_observation(x)
+        x = F.relu(x, True)
+
+        z = torch.autograd.Variable(z, requires_grad=True)
+        z = self.conv1(z)
+        z = self.pool(F.relu(z))
+        z = self.pool(F.relu(self.conv2(z)))
+        z = z.view(-1)
+        self.output_context = z
+
+        # xy = torch.stack([x, y], 0).view(-1)
+        xyz = torch.cat([x, z])
+        xyz = self.fc_merge(xyz)
+        xyz = F.relu(xyz, True)
+        h1, c1 =  self.lstm(xyz.view(1,-1), hidden)
+
+        return h1.squeeze()
+
+
 class baseline(nn.Module):
     """Baseline network
     """
@@ -404,6 +462,8 @@ class SharedNetwork(nn.Module):
             self.net = word2vec_noconv(method, mask_size=mask_size)
         elif self.method == 'word2vec_notarget':
             self.net = word2vec_notarget(method, mask_size=mask_size)
+        elif self.method == 'word2vec_notarget_lstm':
+            self.net = word2vec_notarget_lstm(method, mask_size=mask_size)
 
         # word2vec_nosimi is the baseline
         elif self.method == "word2vec_nosimi":

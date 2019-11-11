@@ -2,6 +2,7 @@
 import json
 import random
 
+import torch
 import h5py
 import numpy as np
 from scipy import spatial
@@ -127,7 +128,7 @@ class THORDiscreteEnvironment(Environment):
                     break
 
         # LAST instruction
-        if self.method == 'word2vec' or self.method == 'word2vec_nosimi' or self.method == 'word2vec_noconv' or self.method == 'word2vec_notarget' or self.method == 'gcn' or self.method == 'aop_we':
+        if self.method == 'word2vec' or self.method == 'word2vec_nosimi' or self.method == 'word2vec_noconv' or self.method == 'word2vec_notarget' or self.method == 'gcn' or self.method == 'aop_we' or self.method == 'word2vec_notarget_lstm':
             self.s_target = self.object_vector[self.object_ids[self.terminal_state['object']]]
 
         elif self.method == 'aop':
@@ -180,6 +181,7 @@ class THORDiscreteEnvironment(Environment):
         self.max_bbox_area = 0
         self.time = 0
         self.success = False
+        self.hidden_state = (torch.zeros(1, 512), torch.zeros(1, 512))
         return True
 
     def step(self, action):
@@ -477,3 +479,9 @@ class THORDiscreteEnvironment(Environment):
             reward_ = reward_ + STEP_PENALTY
 
         return reward_
+
+    def set_hidden(self, hidden):
+        self.hidden_state = hidden
+
+    def render_hidden_state(self):
+        return self.hidden_state
