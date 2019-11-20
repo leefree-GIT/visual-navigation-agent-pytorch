@@ -347,7 +347,7 @@ class Evaluation:
             # Set start position
             env.current_state_id = state_id_best
             for a in ep_actions_succeed[idx]:
-                state, x_processed, object_mask = self.method_class.extract_input(
+                state, x_processed, object_mask, hidden = self.method_class.extract_input(
                     env, torch.device("cpu"))
                 x_processed = x_processed.view(-1, 1).numpy()
                 object_mask = object_mask.squeeze().unsqueeze(2).numpy()
@@ -380,7 +380,7 @@ class Evaluation:
     def run(self, show=False):
         self.method_class = None
         # Load policy network
-        if self.method == 'word2vec' or self.method == 'word2vec_noconv' or self.method == 'word2vec_notarget' or self.method == 'word2vec_nosimi' or self.method == 'word2vec_notarget_lstm':
+        if self.method == 'word2vec' or self.method == 'word2vec_noconv' or self.method == 'word2vec_notarget' or self.method == 'word2vec_nosimi' or self.method == 'word2vec_notarget_lstm' or self.method == 'word2vec_notarget_lstm_2layer':
             self.method_class = SimilarityGrid(self.method)
         elif self.method == 'aop' or self.method == 'aop_we':
             self.method_class = AOP(self.method)
@@ -391,6 +391,7 @@ class Evaluation:
 
         # Init random seed
         random.seed(200)
+        print(self.chk_numbers)
 
         for chk_id in self.chk_numbers:
             resultData = [chk_id]

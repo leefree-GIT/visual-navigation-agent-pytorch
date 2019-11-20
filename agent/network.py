@@ -210,7 +210,7 @@ class word2vec_notarget_lstm(nn.Module):
     """Our method network with LSTM without target word embedding 
     """
 
-    def __init__(self, method, mask_size=5):
+    def __init__(self, method, mask_size=5, nb_layer=1):
         super(word2vec_notarget_lstm, self).__init__()
 
         self.gradient = None
@@ -237,7 +237,7 @@ class word2vec_notarget_lstm(nn.Module):
             512+self.flat_input, 512)
 
         # LSTM for merge layer
-        self.lstm = nn.LSTMCell(512, 512)
+        self.lstm = nn.LSTM(512, 512, num_layers=nb_layer)
 
     def forward(self, inp):
         # x is the observation
@@ -259,7 +259,7 @@ class word2vec_notarget_lstm(nn.Module):
         xyz = torch.cat([x, z])
         xyz = self.fc_merge(xyz)
         xyz = F.relu(xyz, True)
-        h1, c1 =  self.lstm(xyz.view(1,-1), hidden)
+        h1, c1 =  self.lstm(xyz.view(1, 1, -1), hidden)
 
         return h1.squeeze()
 
@@ -464,6 +464,8 @@ class SharedNetwork(nn.Module):
             self.net = word2vec_notarget(method, mask_size=mask_size)
         elif self.method == 'word2vec_notarget_lstm':
             self.net = word2vec_notarget_lstm(method, mask_size=mask_size)
+        elif self.method == 'word2vec_notarget_lstm_2layer':
+            self.net = word2vec_notarget_lstm(method, mask_size=mask_size, nb_layer=2)
 
         # word2vec_nosimi is the baseline
         elif self.method == "word2vec_nosimi":

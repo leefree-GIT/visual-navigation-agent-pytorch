@@ -149,7 +149,7 @@ class TrainingThread(mp.Process):
             self._sync_network(scene)
 
         self.method_class = None
-        if self.method == 'word2vec' or self.method == 'word2vec_noconv' or self.method == 'word2vec_notarget' or self.method == 'word2vec_nosimi' or self.method == 'word2vec_notarget_lstm':
+        if self.method == 'word2vec' or self.method == 'word2vec_noconv' or self.method == 'word2vec_notarget' or self.method == 'word2vec_nosimi' or self.method == 'word2vec_notarget_lstm' or self.method == 'word2vec_notarget_lstm_2layer':
             self.method_class = SimilarityGrid(self.method)
         elif self.method == 'aop' or self.method == 'aop_we':
             self.method_class = AOP(self.method)
