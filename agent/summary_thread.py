@@ -4,7 +4,7 @@ from queue import Empty
 import matplotlib.pyplot as plt
 import torch.multiprocessing as mp
 from tensorboardX import SummaryWriter
-
+import logging
 
 class SummaryThread(mp.Process):
     def __init__(self,
@@ -22,6 +22,8 @@ class SummaryThread(mp.Process):
     def run(self):
         print("SummaryThread starting")
         signal.signal(signal.SIGINT, signal.SIG_IGN)
+        mpl_logger = logging.getLogger('matplotlib')
+        mpl_logger.setLevel(logging.WARNING)
         self.writer = SummaryWriter(self.name)
         while True and not self.exit.is_set():
             try:
