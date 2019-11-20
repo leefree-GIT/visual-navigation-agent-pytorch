@@ -210,7 +210,7 @@ class word2vec_notarget_lstm(nn.Module):
     """Our method network with LSTM without target word embedding 
     """
 
-    def __init__(self, method, mask_size=5, nb_layer=1):
+    def __init__(self, method, mask_size=5, nb_layer=1, cell="lstm"):
         super(word2vec_notarget_lstm, self).__init__()
 
         self.gradient = None
@@ -218,6 +218,7 @@ class word2vec_notarget_lstm(nn.Module):
         self.conv_output = None
         self.output_context = None
         self.lstm_hidden = None
+        self.cell = cell
 
         # Observation layer, use only last RGB frame
         self.fc_observation = nn.Linear(2048, 512)
@@ -237,7 +238,12 @@ class word2vec_notarget_lstm(nn.Module):
             512+self.flat_input, 512)
 
         # LSTM for merge layer
-        self.lstm = nn.LSTM(512, 512, num_layers=nb_layer)
+        if cell == "lstm":
+            self.lstm = nn.LSTM(512, 512, num_layers=nb_layer)
+        elif cell == 'rnn':
+            self.lstm = nn.RNN(512, 512, num_layers=nb_layer)
+        elif cell == 'gru':
+            self.lstm = nn.GRU(512, 512, num_layers=nb_layer)
 
     def forward(self, inp):
         # x is the observation
@@ -259,9 +265,12 @@ class word2vec_notarget_lstm(nn.Module):
         xyz = torch.cat([x, z])
         xyz = self.fc_merge(xyz)
         xyz = F.relu(xyz, True)
-        h1, c1 =  self.lstm(xyz.view(1, 1, -1), hidden)
+        if self.cell == "lstm":
+            out, (h1, c1) =  self.lstm(xyz.view(1, 1, -1), hidden)
+        else:
+            out, h1 = self.lstm(xyz.view(1, 1, -1), hidden)
 
-        return h1.squeeze()
+        return out.squeeze()
 
 
 class baseline(nn.Module):
@@ -466,6 +475,10 @@ class SharedNetwork(nn.Module):
             self.net = word2vec_notarget_lstm(method, mask_size=mask_size)
         elif self.method == 'word2vec_notarget_lstm_2layer':
             self.net = word2vec_notarget_lstm(method, mask_size=mask_size, nb_layer=2)
+        elif self.method == 'word2vec_notarget_rnn':
+            self.net = word2vec_notarget_lstm(method, mask_size=mask_size, cell='rnn')
+        elif self.method == 'word2vec_notarget_gru' :
+            self.net = word2vec_notarget_lstm(method, mask_size=mask_size, cell='gru')
 
         # word2vec_nosimi is the baseline
         elif self.method == "word2vec_nosimi":

@@ -842,5 +842,5 @@
     "eval_param": {
         "num_episode": 250
     },
-    "method": "word2vec_notarget_lstm_2layer"
+    "method": "word2vec_notarget_rnn"
 }

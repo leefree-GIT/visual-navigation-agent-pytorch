@@ -58,6 +58,24 @@ class SimilarityGrid(AbstractMethod):
             hidden = (h1, c1)
 
             return state, x_processed, object_mask, hidden
+        
+        elif self.method == 'word2vec_notarget_rnn' or self.method == 'word2vec_notarget_gru':
+            state["object_mask"] = env.render_mask_similarity()
+            state["hidden"] = env.render_hidden_state()
+            
+            # Change current state with only last frame
+            state["current"] = state["current"][:, -1]
+            x_processed = torch.from_numpy(state["current"])
+            object_mask = torch.from_numpy(state['object_mask'])
+            h1 = state['hidden']
+
+            x_processed = x_processed.to(device)
+            object_mask = object_mask.to(device)
+            h1 = h1.to(device)
+            hidden = h1
+
+            return state, x_processed, object_mask, hidden
+
 
     def forward_policy(self, env, device, policy_networks):
         if self.method == 'word2vec' or self.method == 'word2vec_noconv':
@@ -72,7 +90,7 @@ class SimilarityGrid(AbstractMethod):
             state, x_processed, goal_processed = self.extract_input(env, device)
             (policy, value) = policy_networks((x_processed, goal_processed,))
 
-        elif self.method == 'word2vec_notarget_lstm' or self.method == 'word2vec_notarget_lstm_2layer':
+        elif self.method == 'word2vec_notarget_lstm' or self.method == 'word2vec_notarget_lstm_2layer' or self.method == 'word2vec_notarget_rnn' or self.method == 'word2vec_notarget_gru':
             state, x_processed, object_mask, hidden = self.extract_input(env, device)
 
             # Save current hidden value
@@ -85,6 +103,9 @@ class SimilarityGrid(AbstractMethod):
             handle = policy_networks[0].net.lstm.register_forward_hook(hook)
             (policy, value) = policy_networks((x_processed, object_mask, hidden))
             handle.remove()
-            env.set_hidden(tuple([h.detach() for h in hiddens[-1]]))
+            if self.method == 'word2vec_notarget_rnn' or self.method == 'word2vec_notarget_gru':
+                env.set_hidden(hiddens[-1].detach())
+            else:
+                env.set_hidden(tuple([h.detach() for h in hiddens[-1]]))
 
         return policy, value, state
