@@ -475,6 +475,8 @@ class SharedNetwork(nn.Module):
             self.net = word2vec_notarget_lstm(method, mask_size=mask_size)
         elif self.method == 'word2vec_notarget_lstm_2layer':
             self.net = word2vec_notarget_lstm(method, mask_size=mask_size, nb_layer=2)
+        elif self.method == 'word2vec_notarget_lstm_3layer':
+            self.net = word2vec_notarget_lstm(method, mask_size=mask_size, nb_layer=3)
         elif self.method == 'word2vec_notarget_rnn':
             self.net = word2vec_notarget_lstm(method, mask_size=mask_size, cell='rnn')
         elif self.method == 'word2vec_notarget_gru' :

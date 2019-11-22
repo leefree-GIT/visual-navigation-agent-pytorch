@@ -41,7 +41,7 @@ class SimilarityGrid(AbstractMethod):
 
             return state, x_processed, goal_processed
 
-        elif self.method == 'word2vec_notarget_lstm' or self.method == 'word2vec_notarget_lstm_2layer':
+        elif self.method == 'word2vec_notarget_lstm' or self.method == 'word2vec_notarget_lstm_2layer' or self.method == 'word2vec_notarget_lstm_3layer':
             state["object_mask"] = env.render_mask_similarity()
             state["hidden"] = env.render_hidden_state()
             
@@ -90,7 +90,7 @@ class SimilarityGrid(AbstractMethod):
             state, x_processed, goal_processed = self.extract_input(env, device)
             (policy, value) = policy_networks((x_processed, goal_processed,))
 
-        elif self.method == 'word2vec_notarget_lstm' or self.method == 'word2vec_notarget_lstm_2layer' or self.method == 'word2vec_notarget_rnn' or self.method == 'word2vec_notarget_gru':
+        elif self.method == 'word2vec_notarget_lstm' or self.method == 'word2vec_notarget_lstm_2layer' or self.method == 'word2vec_notarget_lstm_3layer' or self.method == 'word2vec_notarget_rnn' or self.method == 'word2vec_notarget_gru':
             state, x_processed, object_mask, hidden = self.extract_input(env, device)
 
             # Save current hidden value

@@ -380,7 +380,11 @@ class Evaluation:
     def run(self, show=False):
         self.method_class = None
         # Load policy network
-        if self.method == 'word2vec' or self.method == 'word2vec_noconv' or self.method == 'word2vec_notarget' or self.method == 'word2vec_nosimi' or self.method == 'word2vec_notarget_lstm' or self.method == 'word2vec_notarget_lstm_2layer' or self.method == 'word2vec_notarget_rnn' or self.method == 'word2vec_notarget_gru':
+        if self.method == 'word2vec' or self.method == 'word2vec_nosimi' or \
+           self.method == 'word2vec_noconv' or self.method == 'word2vec_notarget' or \
+           self.method == 'gcn' or self.method == 'aop_we' or self.method == 'word2vec_notarget_lstm' or \
+           self.method == 'word2vec_notarget_lstm_2layer' or self.method == 'word2vec_notarget_lstm_3layer' or \
+           self.method == 'word2vec_notarget_rnn' or self.method == 'word2vec_notarget_gru':
             self.method_class = SimilarityGrid(self.method)
         elif self.method == 'aop' or self.method == 'aop_we':
             self.method_class = AOP(self.method)

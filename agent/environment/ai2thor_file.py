@@ -128,7 +128,11 @@ class THORDiscreteEnvironment(Environment):
                     break
 
         # LAST instruction
-        if self.method == 'word2vec' or self.method == 'word2vec_nosimi' or self.method == 'word2vec_noconv' or self.method == 'word2vec_notarget' or self.method == 'gcn' or self.method == 'aop_we' or self.method == 'word2vec_notarget_lstm' or self.method == 'word2vec_notarget_lstm_2layer' or self.method == 'word2vec_notarget_rnn' or self.method == 'word2vec_notarget_gru':
+        if self.method == 'word2vec' or self.method == 'word2vec_nosimi' or \
+           self.method == 'word2vec_noconv' or self.method == 'word2vec_notarget' or \
+           self.method == 'gcn' or self.method == 'aop_we' or self.method == 'word2vec_notarget_lstm' or \
+           self.method == 'word2vec_notarget_lstm_2layer' or self.method == 'word2vec_notarget_lstm_3layer' or \
+           self.method == 'word2vec_notarget_rnn' or self.method == 'word2vec_notarget_gru':
             self.s_target = self.object_vector[self.object_ids[self.terminal_state['object']]]
 
         elif self.method == 'aop':
@@ -183,6 +187,8 @@ class THORDiscreteEnvironment(Environment):
         self.success = False
         if self.method == 'word2vec_notarget_lstm_2layer':
             self.hidden_state = (torch.zeros(2, 1, 512), torch.zeros(2, 1, 512))
+        elif self.method == 'word2vec_notarget_lstm_3layer':
+            self.hidden_state = (torch.zeros(3, 1, 512), torch.zeros(3, 1, 512))
         elif self.method == 'word2vec_notarget_lstm':
             self.hidden_state = (torch.zeros(1, 1, 512), torch.zeros(1, 1, 512))
         else:
