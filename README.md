@@ -1,9 +1,9 @@
 # Visual Object Search by Context Learning
-This is repo is a fork of [Jkulhanek work](https://github.com/jkulhanek/visual-navigation-agent-pytorch)
+This is repo is a fork of [Jkulhanek work](https://github.com/jkulhanek/visual-navigation-agent-pytorch) 
 
 ## Introduction
 
-This repository provides a PyTorch implementation of the paper **Visual Object Search by Context Learning**
+This repository provides a PyTorch implementation of the paper [Visual Object Search by Context Learning](https://ieeexplore.ieee.org/abstract/document/8963758)
 
 ## Setup and run
 This code is implemented in [Pytorch 1.0](https://pytorch.org/) and python 3.7. It uses [Docker](http://docker.com/) to automate instalation process. In order to run this code, you can either run the docker or install the requirements using pip.
@@ -77,3 +77,20 @@ You can find in the `yolo_dataset` folder the cfg and weights of the pretrained 
 # Visual genome
 
 You can find in the `word2vec_visualgenome` folder, the pretrained word2vec model from gensim with visualgenome dataset. You can re-train it by adding `region_descriptions.json.gz` in dataset folder and running the main.py script
+
+# Citation
+Please use this BibTex entry to cite our paper.
+```
+@ARTICLE{8963758,
+author={R. {Druon} and Y. {Yoshiyasu} and A. {Kanezaki} and A. {Watt}},
+journal={IEEE Robotics and Automation Letters},
+title={Visual Object Search by Learning Spatial Context},
+year={2020},
+volume={5},
+number={2},
+pages={1279-1286},
+keywords={Deep learning in robotics and automation;visual-based navigation;autonomous agents},
+doi={10.1109/LRA.2020.2967677},
+ISSN={2377-3774},
+month={April},}
+```
