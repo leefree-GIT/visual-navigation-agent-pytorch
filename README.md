@@ -22,6 +22,7 @@ To train
 ### Run
 
 Please install Git LFS before cloning 
+
 Clone the repo and download submodules:
 
     git clone --recurse-submodules https://github.com/norips/visual-navigation-agent-pytorch.git
@@ -53,7 +54,7 @@ Each file contains:
 - **shortest_path_distance** a square matrix of shortest path distance (in number of steps) between pairwise locations, where `-1` means two states are unreachable from each other.
   
 ### Training or Evaluation
-to train or evaluate your network you need to use a json file as experiment. You can create a experiment file using the script `create_experiment.py`. One experiment file contains training set and evaluation set, reward function and network used. You can set these values using the script (``--help`` to see documentation).
+to train or evaluate your network you need to use a json file as experiment. You can create a experiment file using the script `create_experiment.py`. One experiment file contains training set and evaluation set, reward function and network used. You can set these values using the script (``--help`` to see documentation). Experiment files can be found under EXPERIMENTS folder
 
 Rewards available are:
 - **soft_goal** Agent needs to output the ``Done`` signal to stop and start the evaluation. Reward from paper
